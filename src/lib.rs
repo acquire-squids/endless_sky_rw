@@ -159,7 +159,6 @@ impl Reader {
         for (i, &source_index) in self.sources.iter().enumerate() {
             let mut parser = Parser::new(source_index);
 
-            println!("{}", self.paths.get(i).unwrap().display());
             parser.parse(&mut self.data);
 
             let errors = parser.take_errors();
