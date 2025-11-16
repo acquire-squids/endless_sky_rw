@@ -52,10 +52,7 @@ pub fn read_path<T: Into<PathBuf>>(path: T) -> Option<DataFolder> {
 pub fn read_upload(paths: Vec<String>, sources: Vec<String>) -> Option<(DataFolder, Vec<u8>)> {
     let mut error_buffer = vec![];
 
-    let paths = paths
-        .into_iter()
-        .map(|p| PathBuf::from(p))
-        .collect::<Vec<_>>();
+    let paths = paths.into_iter().map(PathBuf::from).collect::<Vec<_>>();
 
     let reader = Reader::new(paths, sources);
 
