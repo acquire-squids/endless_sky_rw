@@ -30,11 +30,10 @@ pub fn read_path<T: Into<PathBuf>>(path: T) -> Option<DataFolder> {
 
     let mut paths = vec![];
     let mut sources = vec![];
-    let mut source_id = 0;
 
     let file_path = base_path.clone();
 
-    if let ReadResult::Ok = read_source(file_path, &mut paths, &mut sources, &mut source_id) {
+    if let ReadResult::Ok = read_source(file_path, &mut paths, &mut sources) {
         let reader = Reader::new(paths, sources);
 
         match reader.read(&mut io::stdout(), true) {
@@ -75,7 +74,6 @@ fn read_source(
     file_path: PathBuf,
     paths: &mut Vec<PathBuf>,
     sources: &mut Vec<String>,
-    source_id: &mut usize,
 ) -> ReadResult {
     if !file_path.exists() {
         eprintln!("File \"{}\" does not exist", file_path.display());
@@ -87,10 +85,7 @@ fn read_source(
             for entry in dir.flatten() {
                 let file_path = entry.path();
 
-                all_success &= matches!(
-                    read_source(file_path, paths, sources, source_id),
-                    ReadResult::Ok
-                );
+                all_success &= matches!(read_source(file_path, paths, sources), ReadResult::Ok);
             }
 
             if all_success {
@@ -109,7 +104,6 @@ fn read_source(
                 Ok(source) => {
                     paths.push(file_path);
                     sources.push(source);
-                    *source_id += 1;
 
                     ReadResult::Ok
                 }
