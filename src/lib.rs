@@ -49,6 +49,23 @@ pub fn read_path<T: Into<PathBuf>>(path: T) -> Option<DataFolder> {
     None
 }
 
+#[cfg(all(target_family = "wasm", target_os = "unknown"))]
+pub fn read_upload(paths: Vec<String>, sources: Vec<String>) -> Option<(DataFolder, Vec<u8>)> {
+    let mut error_buffer = vec![];
+
+    let paths = paths
+        .into_iter()
+        .map(|p| PathBuf::from(p))
+        .collect::<Vec<_>>();
+
+    let reader = Reader::new(paths, sources);
+
+    match reader.read(&mut error_buffer, false) {
+        Ok(data) => Some((data, error_buffer)),
+        Err(_error) => None,
+    }
+}
+
 enum ReadResult {
     Ok,
     Err,
