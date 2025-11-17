@@ -112,12 +112,12 @@ impl Data {
         }
     }
 
-    pub fn get_mut_children(&mut self, node_index: NodeIndex) -> Option<&[NodeIndex]> {
+    pub fn get_mut_children(&mut self, node_index: NodeIndex) -> Option<&mut [NodeIndex]> {
         match self.get_mut_node(node_index) {
             None => None,
             Some(Node::Error) => None,
             Some(Node::Some { .. }) => None,
-            Some(Node::Parent { children, .. }) => Some(children.as_slice()),
+            Some(Node::Parent { children, .. }) => Some(children),
         }
     }
 
@@ -137,11 +137,11 @@ impl Data {
         }
     }
 
-    pub fn get_mut_tokens(&mut self, node_index: NodeIndex) -> Option<&[Token]> {
+    pub fn get_mut_tokens(&mut self, node_index: NodeIndex) -> Option<&mut [Token]> {
         match self.get_mut_node(node_index) {
             None => None,
             Some(Node::Error) => None,
-            Some(Node::Some { tokens } | Node::Parent { tokens, .. }) => Some(tokens.as_slice()),
+            Some(Node::Some { tokens } | Node::Parent { tokens, .. }) => Some(tokens),
         }
     }
 
