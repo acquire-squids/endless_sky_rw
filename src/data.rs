@@ -7,11 +7,11 @@ use std::{
     num::ParseFloatError,
 };
 
-#[derive(Default)]
 pub struct Data {
     nodes: Arena<Node>,
     sources: Arena<String>,
     root_nodes: Vec<(SourceIndex, NodeIndex)>,
+    error_node: NodeIndex,
 }
 
 pub enum Node {
@@ -22,6 +22,7 @@ pub enum Node {
         tokens: Vec<Token>,
         children: Vec<NodeIndex>,
     },
+    Error,
 }
 
 arena::arena_index! {
@@ -32,7 +33,25 @@ arena::arena_index! {
     pub SourceIndex
 }
 
+impl Default for Data {
+    fn default() -> Self {
+        let mut nodes = Arena::default();
+        let error_node = nodes.insert(Node::Error).into();
+
+        Self {
+            nodes,
+            sources: Arena::default(),
+            root_nodes: vec![],
+            error_node,
+        }
+    }
+}
+
 impl Data {
+    pub fn error_node(&self) -> NodeIndex {
+        self.error_node
+    }
+
     pub fn push_root_node(&mut self, source_index: SourceIndex, node_index: NodeIndex) {
         self.root_nodes.push((source_index, node_index));
     }
@@ -56,6 +75,7 @@ impl Data {
     pub fn push_child(&mut self, node_index: NodeIndex, child_index: NodeIndex) {
         match self.get_mut_node(node_index) {
             None => {}
+            Some(Node::Error) => {}
             Some(some @ Node::Some { .. }) => {
                 let Node::Some { mut tokens } = mem::replace(
                     some,
@@ -86,6 +106,7 @@ impl Data {
     pub fn get_children(&self, node_index: NodeIndex) -> Option<&[NodeIndex]> {
         match self.get_node(node_index) {
             None => None,
+            Some(Node::Error) => None,
             Some(Node::Some { .. }) => None,
             Some(Node::Parent { children, .. }) => Some(children.as_slice()),
         }
@@ -94,6 +115,7 @@ impl Data {
     pub fn get_mut_children(&mut self, node_index: NodeIndex) -> Option<&[NodeIndex]> {
         match self.get_mut_node(node_index) {
             None => None,
+            Some(Node::Error) => None,
             Some(Node::Some { .. }) => None,
             Some(Node::Parent { children, .. }) => Some(children.as_slice()),
         }
@@ -102,6 +124,7 @@ impl Data {
     pub fn push_token(&mut self, node_index: NodeIndex, token: Token) {
         match self.get_mut_node(node_index) {
             None => {}
+            Some(Node::Error) => {}
             Some(Node::Some { tokens } | Node::Parent { tokens, .. }) => tokens.push(token),
         }
     }
@@ -109,6 +132,7 @@ impl Data {
     pub fn get_tokens(&self, node_index: NodeIndex) -> Option<&[Token]> {
         match self.get_node(node_index) {
             None => None,
+            Some(Node::Error) => None,
             Some(Node::Some { tokens } | Node::Parent { tokens, .. }) => Some(tokens.as_slice()),
         }
     }
@@ -116,6 +140,7 @@ impl Data {
     pub fn get_mut_tokens(&mut self, node_index: NodeIndex) -> Option<&[Token]> {
         match self.get_mut_node(node_index) {
             None => None,
+            Some(Node::Error) => None,
             Some(Node::Some { tokens } | Node::Parent { tokens, .. }) => Some(tokens.as_slice()),
         }
     }
@@ -196,6 +221,10 @@ impl Data {
         node_index: NodeIndex,
         indentation: usize,
     ) -> fmt::Result {
+        if let Some(Node::Error) = self.get_node(node_index) {
+            return Ok(());
+        }
+
         if let Some(tokens) = self.get_tokens(node_index) {
             for (i, token) in tokens.iter().enumerate() {
                 if let Some(lexeme) =
