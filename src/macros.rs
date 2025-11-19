@@ -6,8 +6,8 @@ macro_rules! node_path_iter {
         {
             let data: &$crate::Data = $data;
 
-            let source_index: $crate::SourceIndex = $source_index;
-            let node_index: $crate::NodeIndex = $node_index;
+            let source_index: $crate::SourceIndex = $source;
+            let node_index: $crate::NodeIndex = $node;
 
             data.filter_children(source_index, node_index, |source_index, tokens| {
                 matches!(
@@ -22,9 +22,9 @@ macro_rules! node_path_iter {
     };
 
     (
-        $data:expr => $node:expr; $first:pat $(=> $($tail:tt)+)?
+        $data:expr => ($source:expr, $node:expr); $first:pat $(=> $($tail:tt)+)?
     ) => {
-        $crate::node_path_iter!(@nested $data => $node; $first $(=> $($tail)+)?)
+        $crate::node_path_iter!(@nested $data => ($source, $node); $first $(=> $($tail)+)?)
     };
 
     (
