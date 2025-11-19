@@ -257,4 +257,18 @@ impl Data {
 
         Ok(())
     }
+
+    pub fn write_root_nodes(
+        &self,
+        output: &mut String,
+        root_nodes: &[(SourceIndex, NodeIndex)],
+    ) -> fmt::Result {
+        for (source_index, node_index) in root_nodes {
+            self.write(output, *source_index, *node_index, 0)?;
+
+            write!(output, "\n\n\n\n")?;
+        }
+
+        Ok(())
+    }
 }
