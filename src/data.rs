@@ -2,6 +2,7 @@ use crate::arena::{self, Arena};
 use crate::lex::token::Token;
 
 use std::{
+    collections::HashSet,
     fmt::{self, Write},
     mem,
     num::ParseFloatError,
@@ -221,6 +222,56 @@ impl Data {
         node_index: NodeIndex,
         indentation: usize,
     ) -> fmt::Result {
+        let mut infinity_prevention = HashSet::new();
+
+        self.write_recursive(
+            output,
+            source_index,
+            node_index,
+            indentation,
+            &mut infinity_prevention,
+        )
+    }
+
+    pub fn write_root_nodes(
+        &self,
+        output: &mut String,
+        root_nodes: &[(SourceIndex, NodeIndex)],
+    ) -> fmt::Result {
+        let mut infinity_prevention = HashSet::new();
+
+        for (source_index, node_index) in root_nodes {
+            self.write_recursive(
+                output,
+                *source_index,
+                *node_index,
+                0,
+                &mut infinity_prevention,
+            )?;
+
+            write!(output, "\n\n\n\n")?;
+        }
+
+        Ok(())
+    }
+
+    fn write_recursive(
+        &self,
+        output: &mut String,
+        source_index: SourceIndex,
+        node_index: NodeIndex,
+        indentation: usize,
+        infinity_prevention: &mut HashSet<(SourceIndex, NodeIndex)>,
+    ) -> fmt::Result {
+        // if the pair is already in the `HashSet`, it would lead to infinite recursion
+        // it's okay to silently error here because the node was already written
+        if infinity_prevention.contains(&(source_index, node_index)) {
+            return Ok(());
+        }
+
+        infinity_prevention.insert((source_index, node_index));
+
+        // TODO: don't silently error
         if let Some(Node::Error) = self.get_node(node_index) {
             return Ok(());
         }
@@ -229,6 +280,7 @@ impl Data {
             for (i, token) in tokens.iter().enumerate() {
                 if let Some(lexeme) =
                     token.lexeme(self.get_source(source_index).unwrap_or_default())
+                    && !lexeme.is_empty()
                 {
                     if !lexeme.contains('"') {
                         write!(output, "\"{lexeme}\"")?;
@@ -244,29 +296,23 @@ impl Data {
                 }
             }
 
-            if let Some(children) = self.get_children(node_index) {
+            if let Some(children) = self.get_children(node_index)
+                && !children.is_empty()
+            {
                 let indentation = indentation + 1;
 
                 for child in children {
                     write!(output, "\n{}", "\t".repeat(indentation))?;
 
-                    self.write(output, source_index, *child, indentation)?;
+                    self.write_recursive(
+                        output,
+                        source_index,
+                        *child,
+                        indentation,
+                        infinity_prevention,
+                    )?;
                 }
             }
-        }
-
-        Ok(())
-    }
-
-    pub fn write_root_nodes(
-        &self,
-        output: &mut String,
-        root_nodes: &[(SourceIndex, NodeIndex)],
-    ) -> fmt::Result {
-        for (source_index, node_index) in root_nodes {
-            self.write(output, *source_index, *node_index, 0)?;
-
-            write!(output, "\n\n\n\n")?;
         }
 
         Ok(())
