@@ -69,7 +69,7 @@ impl Lexer {
             self.byte_offset += c.len_utf8();
 
             match c {
-                '\n' if !self.on_new_line => {
+                '\n' => {
                     self.on_new_line = true;
 
                     return Some(Ok(Token::new(
@@ -111,7 +111,7 @@ impl Lexer {
 
                     return Some(Ok(token));
                 }
-                '\n' | ' ' | '\t' => {}
+                ' ' | '\t' => {}
                 '#' => {
                     while let Some(n) = data.get_source(self.source_index()).unwrap()
                         [(self.byte_offset)..]
