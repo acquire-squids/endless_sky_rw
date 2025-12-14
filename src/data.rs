@@ -282,12 +282,12 @@ impl Data {
                     token.lexeme(self.get_source(source_index).unwrap_or_default())
                     && !lexeme.is_empty()
                 {
-                    if !lexeme.contains('"') {
-                        write!(output, "\"{lexeme}\"")?;
-                    } else if !lexeme.contains('`') {
-                        write!(output, "`{lexeme}`")?;
-                    } else {
+                    if !lexeme.contains(' ') {
                         write!(output, "{lexeme}")?;
+                    } else if !lexeme.contains('"') {
+                        write!(output, "\"{lexeme}\"")?;
+                    } else {
+                        write!(output, "`{lexeme}`")?;
                     }
 
                     if i < tokens.len() - 1 {
