@@ -205,8 +205,10 @@ impl Data {
         P: FnMut(SourceIndex, &[Token]) -> bool,
     {
         self.get_children(node_index)
-            .unwrap_or_default()
-            .iter()
+            .into_iter()
+            .flat_map(|children| {
+                children.iter()
+            })
             .filter(move |child| {
                 matches!(self.get_tokens(**child), Some(tokens) if predicate(source_index, tokens))
             })
@@ -278,8 +280,8 @@ impl Data {
 
         if let Some(tokens) = self.get_tokens(node_index) {
             for (i, token) in tokens.iter().enumerate() {
-                if let Some(lexeme) =
-                    token.lexeme(self.get_source(source_index).unwrap_or_default())
+                if let Some(source) = self.get_source(source_index)
+                    && let Some(lexeme) = token.lexeme(source)
                     && !lexeme.is_empty()
                 {
                     if !lexeme.contains(' ') {

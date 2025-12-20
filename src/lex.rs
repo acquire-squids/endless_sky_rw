@@ -60,8 +60,10 @@ impl Lexer {
             return Some(lookahead);
         }
 
-        while let Some(c) = data.get_source(self.source_index()).unwrap()[(self.byte_offset)..]
-            .chars()
+        while let Some(c) = data
+            .get_source(self.source_index())
+            .into_iter()
+            .flat_map(|source| source[(self.byte_offset)..].chars())
             .next()
         {
             let start = self.byte_offset;
@@ -113,9 +115,10 @@ impl Lexer {
                 }
                 ' ' | '\t' => {}
                 '#' => {
-                    while let Some(n) = data.get_source(self.source_index()).unwrap()
-                        [(self.byte_offset)..]
-                        .chars()
+                    while let Some(n) = data
+                        .get_source(self.source_index())
+                        .into_iter()
+                        .flat_map(|source| source[(self.byte_offset)..].chars())
                         .next()
                         && n != '\n'
                     {
@@ -127,9 +130,10 @@ impl Lexer {
 
                     let after_quote = self.byte_offset;
 
-                    while let Some(n) = data.get_source(self.source_index()).unwrap()
-                        [(self.byte_offset)..]
-                        .chars()
+                    while let Some(n) = data
+                        .get_source(self.source_index())
+                        .into_iter()
+                        .flat_map(|source| source[(self.byte_offset)..].chars())
                         .next()
                         && n != '\n'
                         && n != c
@@ -140,7 +144,12 @@ impl Lexer {
                     let token =
                         Token::new(TokenKind::Symbol, Span::new(after_quote, self.byte_offset));
 
-                    if !matches!(data.get_source(self.source_index()).unwrap()[(self.byte_offset)..].chars().next(), Some(n) if n == c)
+                    if let Some(n) = data
+                        .get_source(self.source_index())
+                        .into_iter()
+                        .flat_map(|source| source[(self.byte_offset)..].chars())
+                        .next()
+                        && n != c
                     {
                         self.lookahead = Some(Ok(token));
 
@@ -157,9 +166,10 @@ impl Lexer {
                 _ if c.is_ascii() => {
                     self.on_new_line = false;
 
-                    while let Some(n) = data.get_source(self.source_index()).unwrap()
-                        [(self.byte_offset)..]
-                        .chars()
+                    while let Some(n) = data
+                        .get_source(self.source_index())
+                        .into_iter()
+                        .flat_map(|source| source[(self.byte_offset)..].chars())
                         .next()
                         && !n.is_ascii_whitespace()
                         && n.is_ascii()
