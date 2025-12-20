@@ -73,7 +73,7 @@ impl<'a> Spannable for &'a str {
     }
 }
 
-const ESC: char = 27u8 as char;
+const ESC: &str = "\x1B";
 const RESET: &str = "[0m";
 const NONE: &str = "";
 
@@ -151,6 +151,8 @@ pub struct ReportColors {
     pub trim: ReportColor,
     pub highlight: ReportColor,
     pub underline: ReportColor,
+    esc: &'static str,
+    reset: &'static str,
 }
 
 impl Default for ReportColors {
@@ -162,6 +164,8 @@ impl Default for ReportColors {
             trim: ReportColor::BrightBlue,
             highlight: ReportColor::BrightRed,
             underline: ReportColor::BrightMagenta,
+            esc: ESC,
+            reset: RESET,
         }
     }
 }
@@ -187,6 +191,8 @@ impl ReportColors {
             trim: ReportColor::None,
             highlight: ReportColor::None,
             underline: ReportColor::None,
+            esc: "",
+            reset: "",
         }
     }
 }
@@ -433,14 +439,14 @@ where
 
         let mut buffer = format!(
             "{0}{1}---------------{2}{3}\n{4}{5}{6}:{line_number}:{column}\n{7}{8}{9}:",
-            ESC,
+            report_data.color_data.esc,
             report_data.color_data.divider.to_ansi_escape(),
-            ESC,
-            RESET,
-            ESC,
+            report_data.color_data.esc,
+            report_data.color_data.reset,
+            report_data.color_data.esc,
             report_data.color_data.message.to_ansi_escape(),
             name,
-            ESC,
+            report_data.color_data.esc,
             report_data.color_data.message.to_ansi_escape(),
             kind,
         );
@@ -450,8 +456,8 @@ where
             buffer.push_str(Self::printed_source_map(expected).as_str());
         }
 
-        buffer.push(ESC);
-        buffer.push_str(RESET);
+        buffer.push_str(report_data.color_data.esc);
+        buffer.push_str(report_data.color_data.reset);
 
         buffer.push('\n');
 
@@ -492,12 +498,12 @@ where
             buffer.push_str(
                 format!(
                     " {0}{1}{3:>2$} | {4}{5}",
-                    ESC,
+                    report_data.color_data.esc,
                     report_data.color_data.divider.to_ansi_escape(),
                     line_number_digits,
                     last_line_number,
-                    ESC,
-                    RESET,
+                    report_data.color_data.esc,
+                    report_data.color_data.reset,
                 )
                 .as_str(),
             );
@@ -508,11 +514,11 @@ where
                 buffer.push_str(
                     format!(
                         " {0}{1}{2}{3}{4}",
-                        ESC,
+                        report_data.color_data.esc,
                         report_data.color_data.trim.to_ansi_escape(),
                         trimmed,
-                        ESC,
-                        RESET,
+                        report_data.color_data.esc,
+                        report_data.color_data.reset,
                     )
                     .as_str(),
                 );
@@ -529,12 +535,12 @@ where
             buffer.push_str(
                 format!(
                     " {0}{1}{3:>2$} | {4}{5}",
-                    ESC,
+                    report_data.color_data.esc,
                     report_data.color_data.divider.to_ansi_escape(),
                     line_number_digits,
                     line_number,
-                    ESC,
-                    RESET,
+                    report_data.color_data.esc,
+                    report_data.color_data.reset,
                 )
                 .as_str(),
             );
@@ -543,11 +549,11 @@ where
                 buffer.push_str(
                     format!(
                         "{0}{1}{2}{3}{4} ",
-                        ESC,
+                        report_data.color_data.esc,
                         report_data.color_data.trim.to_ansi_escape(),
                         trimmed,
-                        ESC,
-                        RESET,
+                        report_data.color_data.esc,
+                        report_data.color_data.reset,
                     )
                     .as_str(),
                 );
@@ -558,11 +564,11 @@ where
             buffer.push_str(
                 format!(
                     "{0}{1}{2}{3}{4}",
-                    ESC,
+                    report_data.color_data.esc,
                     report_data.color_data.highlight.to_ansi_escape(),
                     Self::printed_source_map(&source[span_start..first_highlight_end]),
-                    ESC,
-                    RESET,
+                    report_data.color_data.esc,
+                    report_data.color_data.reset,
                 )
                 .as_str(),
             );
@@ -570,12 +576,12 @@ where
             buffer.push_str(
                 format!(
                     "\n {0}{1}{3:>2$} | {4}{5}",
-                    ESC,
+                    report_data.color_data.esc,
                     report_data.color_data.divider.to_ansi_escape(),
                     line_number_digits,
                     " ",
-                    ESC,
-                    RESET,
+                    report_data.color_data.esc,
+                    report_data.color_data.reset,
                 )
                 .as_str(),
             );
@@ -597,14 +603,14 @@ where
             buffer.push_str(
                 format!(
                     "{0}{1}{2}{3}{4}",
-                    ESC,
+                    report_data.color_data.esc,
                     report_data.color_data.underline.to_ansi_escape(),
                     "^".repeat(
                         Self::printed_source_length(&source[span_start..first_highlight_end])
                             .max(1)
                     ),
-                    ESC,
-                    RESET,
+                    report_data.color_data.esc,
+                    report_data.color_data.reset,
                 )
                 .as_str(),
             );
@@ -612,12 +618,12 @@ where
             buffer.push_str(
                 format!(
                     "\n {0}{1}{3:>2$} | {4}{5}",
-                    ESC,
+                    report_data.color_data.esc,
                     report_data.color_data.divider.to_ansi_escape(),
                     line_number_digits,
                     " ",
-                    ESC,
-                    RESET,
+                    report_data.color_data.esc,
+                    report_data.color_data.reset,
                 )
                 .as_str(),
             );
@@ -625,11 +631,11 @@ where
             buffer.push_str(
                 format!(
                     "{0}{1}{2}{3}{4}",
-                    ESC,
+                    report_data.color_data.esc,
                     report_data.color_data.trim.to_ansi_escape(),
                     trimmed,
-                    ESC,
-                    RESET,
+                    report_data.color_data.esc,
+                    report_data.color_data.reset,
                 )
                 .as_str(),
             );
@@ -637,7 +643,7 @@ where
             buffer.push_str(
                 format!(
                     "\n {0}{1}{3:>2$} | {4}{5}",
-                    ESC,
+                    report_data.color_data.esc,
                     report_data.color_data.divider.to_ansi_escape(),
                     line_number_digits,
                     line_number
@@ -645,8 +651,8 @@ where
                             .chars()
                             .filter(|ch| *ch == '\n')
                             .count(),
-                    ESC,
-                    RESET,
+                    report_data.color_data.esc,
+                    report_data.color_data.reset,
                 )
                 .as_str(),
             );
@@ -654,11 +660,11 @@ where
             buffer.push_str(
                 format!(
                     "{0}{1}{2}{3}{4}",
-                    ESC,
+                    report_data.color_data.esc,
                     report_data.color_data.highlight.to_ansi_escape(),
                     Self::printed_source_map(&source[second_highlight_start..span_end]).as_str(),
-                    ESC,
-                    RESET,
+                    report_data.color_data.esc,
+                    report_data.color_data.reset,
                 )
                 .as_str(),
             );
@@ -669,11 +675,11 @@ where
                 buffer.push_str(
                     format!(
                         " {0}{1}{2}{3}{4}",
-                        ESC,
+                        report_data.color_data.esc,
                         report_data.color_data.trim.to_ansi_escape(),
                         trimmed,
-                        ESC,
-                        RESET,
+                        report_data.color_data.esc,
+                        report_data.color_data.reset,
                     )
                     .as_str(),
                 );
@@ -682,12 +688,12 @@ where
             buffer.push_str(
                 format!(
                     "\n {0}{1}{3:>2$} | {4}{5}",
-                    ESC,
+                    report_data.color_data.esc,
                     report_data.color_data.divider.to_ansi_escape(),
                     line_number_digits,
                     " ",
-                    ESC,
-                    RESET,
+                    report_data.color_data.esc,
+                    report_data.color_data.reset,
                 )
                 .as_str(),
             );
@@ -695,14 +701,14 @@ where
             buffer.push_str(
                 format!(
                     "{0}{1}{2}{3}{4}",
-                    ESC,
+                    report_data.color_data.esc,
                     report_data.color_data.underline.to_ansi_escape(),
                     "^".repeat(
                         Self::printed_source_length(&source[second_highlight_start..span_end])
                             .max(1)
                     ),
-                    ESC,
-                    RESET,
+                    report_data.color_data.esc,
+                    report_data.color_data.reset,
                 )
                 .as_str(),
             );
@@ -710,12 +716,12 @@ where
             buffer.push_str(
                 format!(
                     " {0}{1}{3:>2$} | {4}{5}",
-                    ESC,
+                    report_data.color_data.esc,
                     report_data.color_data.divider.to_ansi_escape(),
                     line_number_digits,
                     line_number,
-                    ESC,
-                    RESET,
+                    report_data.color_data.esc,
+                    report_data.color_data.reset,
                 )
                 .as_str(),
             );
@@ -724,11 +730,11 @@ where
                 buffer.push_str(
                     format!(
                         "{0}{1}{2}{3}{4} ",
-                        ESC,
+                        report_data.color_data.esc,
                         report_data.color_data.trim.to_ansi_escape(),
                         trimmed,
-                        ESC,
-                        RESET,
+                        report_data.color_data.esc,
+                        report_data.color_data.reset,
                     )
                     .as_str(),
                 );
@@ -739,11 +745,11 @@ where
             buffer.push_str(
                 format!(
                     "{0}{1}{2}{3}{4}",
-                    ESC,
+                    report_data.color_data.esc,
                     report_data.color_data.highlight.to_ansi_escape(),
                     Self::printed_source_map(&source[span_start..first_highlight_end]),
-                    ESC,
-                    RESET,
+                    report_data.color_data.esc,
+                    report_data.color_data.reset,
                 )
                 .as_str(),
             );
@@ -751,11 +757,11 @@ where
             buffer.push_str(
                 format!(
                     " {0}{1}{2}{3}{4} ",
-                    ESC,
+                    report_data.color_data.esc,
                     report_data.color_data.trim.to_ansi_escape(),
                     trimmed,
-                    ESC,
-                    RESET,
+                    report_data.color_data.esc,
+                    report_data.color_data.reset,
                 )
                 .as_str(),
             );
@@ -763,11 +769,11 @@ where
             buffer.push_str(
                 format!(
                     "{0}{1}{2}{3}{4}",
-                    ESC,
+                    report_data.color_data.esc,
                     report_data.color_data.highlight.to_ansi_escape(),
                     Self::printed_source_map(&source[second_highlight_start..span_end]),
-                    ESC,
-                    RESET,
+                    report_data.color_data.esc,
+                    report_data.color_data.reset,
                 )
                 .as_str(),
             );
@@ -777,12 +783,12 @@ where
             buffer.push_str(
                 format!(
                     "\n {0}{1}{3:>2$} | {4}{5}",
-                    ESC,
+                    report_data.color_data.esc,
                     report_data.color_data.divider.to_ansi_escape(),
                     line_number_digits,
                     " ",
-                    ESC,
-                    RESET,
+                    report_data.color_data.esc,
+                    report_data.color_data.reset,
                 )
                 .as_str(),
             );
@@ -791,12 +797,12 @@ where
                 buffer.push_str(
                     format!(
                         "{0}{1}{2}{3}{4} ",
-                        ESC,
+                        report_data.color_data.esc,
                         report_data.color_data.trim.to_ansi_escape(),
                         " ".repeat(Self::printed_source_length(trimmed) + 1)
                             .as_str(),
-                        ESC,
-                        RESET,
+                        report_data.color_data.esc,
+                        report_data.color_data.reset,
                     )
                     .as_str(),
                 );
@@ -812,14 +818,14 @@ where
             buffer.push_str(
                 format!(
                     "{0}{1}{2}{3}{4}",
-                    ESC,
+                    report_data.color_data.esc,
                     report_data.color_data.underline.to_ansi_escape(),
                     "^".repeat(
                         Self::printed_source_length(&source[span_start..first_highlight_end])
                             .max(1)
                     ),
-                    ESC,
-                    RESET,
+                    report_data.color_data.esc,
+                    report_data.color_data.reset,
                 )
                 .as_str(),
             );
@@ -827,12 +833,12 @@ where
             buffer.push_str(
                 format!(
                     " {0}{1}{2}{3}{4} ",
-                    ESC,
+                    report_data.color_data.esc,
                     report_data.color_data.trim.to_ansi_escape(),
                     " ".repeat(Self::printed_source_length(trimmed) + 2)
                         .as_str(),
-                    ESC,
-                    RESET,
+                    report_data.color_data.esc,
+                    report_data.color_data.reset,
                 )
                 .as_str(),
             );
@@ -840,14 +846,14 @@ where
             buffer.push_str(
                 format!(
                     "{0}{1}{2}{3}{4}",
-                    ESC,
+                    report_data.color_data.esc,
                     report_data.color_data.underline.to_ansi_escape(),
                     "^".repeat(
                         Self::printed_source_length(&source[second_highlight_start..span_end])
                             .max(1)
                     ),
-                    ESC,
-                    RESET,
+                    report_data.color_data.esc,
+                    report_data.color_data.reset,
                 )
                 .as_str(),
             );
@@ -855,12 +861,12 @@ where
             buffer.push_str(
                 format!(
                     " {0}{1}{3:>2$} | {4}{5}",
-                    ESC,
+                    report_data.color_data.esc,
                     report_data.color_data.divider.to_ansi_escape(),
                     line_number_digits,
                     line_number,
-                    ESC,
-                    RESET,
+                    report_data.color_data.esc,
+                    report_data.color_data.reset,
                 )
                 .as_str(),
             );
@@ -869,11 +875,11 @@ where
                 buffer.push_str(
                     format!(
                         "{0}{1}{2}{3}{4} ",
-                        ESC,
+                        report_data.color_data.esc,
                         report_data.color_data.trim.to_ansi_escape(),
                         trimmed,
-                        ESC,
-                        RESET,
+                        report_data.color_data.esc,
+                        report_data.color_data.reset,
                     )
                     .as_str(),
                 );
@@ -884,11 +890,11 @@ where
             buffer.push_str(
                 format!(
                     "{0}{1}{2}{3}{4}",
-                    ESC,
+                    report_data.color_data.esc,
                     report_data.color_data.highlight.to_ansi_escape(),
                     Self::printed_source_map(&source[span_start..span_end]),
-                    ESC,
-                    RESET,
+                    report_data.color_data.esc,
+                    report_data.color_data.reset,
                 )
                 .as_str(),
             );
@@ -899,11 +905,11 @@ where
                 buffer.push_str(
                     format!(
                         " {0}{1}{2}{3}{4}",
-                        ESC,
+                        report_data.color_data.esc,
                         report_data.color_data.trim.to_ansi_escape(),
                         trimmed,
-                        ESC,
-                        RESET,
+                        report_data.color_data.esc,
+                        report_data.color_data.reset,
                     )
                     .as_str(),
                 );
@@ -912,12 +918,12 @@ where
             buffer.push_str(
                 format!(
                     "\n {0}{1}{3:>2$} | {4}{5}",
-                    ESC,
+                    report_data.color_data.esc,
                     report_data.color_data.divider.to_ansi_escape(),
                     line_number_digits,
                     " ",
-                    ESC,
-                    RESET,
+                    report_data.color_data.esc,
+                    report_data.color_data.reset,
                 )
                 .as_str(),
             );
@@ -939,11 +945,11 @@ where
             buffer.push_str(
                 format!(
                     "{0}{1}{2}{3}{4}",
-                    ESC,
+                    report_data.color_data.esc,
                     report_data.color_data.underline.to_ansi_escape(),
                     "^".repeat(Self::printed_source_length(&source[span_start..span_end]).max(1)),
-                    ESC,
-                    RESET,
+                    report_data.color_data.esc,
+                    report_data.color_data.reset,
                 )
                 .as_str(),
             );
@@ -965,12 +971,12 @@ where
             buffer.push_str(
                 format!(
                     " {0}{1}{3:>2$} | {4}{5}",
-                    ESC,
+                    report_data.color_data.esc,
                     report_data.color_data.divider.to_ansi_escape(),
                     line_number_digits,
                     next_line_number,
-                    ESC,
-                    RESET,
+                    report_data.color_data.esc,
+                    report_data.color_data.reset,
                 )
                 .as_str(),
             );
@@ -981,11 +987,11 @@ where
                 buffer.push_str(
                     format!(
                         " {0}{1}{2}{3}{4}",
-                        ESC,
+                        report_data.color_data.esc,
                         report_data.color_data.trim.to_ansi_escape(),
                         trimmed,
-                        ESC,
-                        RESET,
+                        report_data.color_data.esc,
+                        report_data.color_data.reset,
                     )
                     .as_str(),
                 );
@@ -995,14 +1001,14 @@ where
         }
 
         for note in self.notes().iter() {
-            buffer.push(ESC);
+            buffer.push_str(report_data.color_data.esc);
             buffer.push_str(report_data.color_data.note.to_ansi_escape());
 
             buffer.push_str("NOTE: ");
             buffer.push_str(note.to_string().as_str());
 
-            buffer.push(ESC);
-            buffer.push_str(RESET);
+            buffer.push_str(report_data.color_data.esc);
+            buffer.push_str(report_data.color_data.reset);
             buffer.push('\n');
         }
 
