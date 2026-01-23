@@ -14,7 +14,7 @@ pub struct LexError {
 }
 
 impl LexError {
-    pub fn new(kind: LexErrorKind, span: Span) -> Self {
+    pub const fn new(kind: LexErrorKind, span: Span) -> Self {
         Self { kind, span }
     }
 }

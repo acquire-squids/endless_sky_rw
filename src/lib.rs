@@ -31,9 +31,12 @@ pub fn read_path<T: Into<PathBuf>>(path: T) -> Option<DataFolder> {
     let mut paths = vec![];
     let mut sources = vec![];
 
-    let file_path = base_path.clone();
+    let file_path = base_path;
 
-    if let ReadResult::Ok = read_source(file_path, &mut paths, &mut sources) {
+    if matches!(
+        read_source(file_path, &mut paths, &mut sources),
+        ReadResult::Ok
+    ) {
         let reader = Reader::new(paths, sources);
 
         match reader.read(&mut io::stdout(), true) {
@@ -78,22 +81,25 @@ fn read_source(
     } else if file_path.is_dir() {
         let mut all_success = true;
 
-        if let Ok(dir) = fs::read_dir(&file_path) {
-            for entry in dir.flatten() {
-                let file_path = entry.path();
-
-                all_success &= matches!(read_source(file_path, paths, sources), ReadResult::Ok);
-            }
-
-            if all_success {
-                ReadResult::Ok
-            } else {
+        fs::read_dir(&file_path).map_or_else(
+            |_| {
+                eprintln!("Failed to read directory \"{}\"", file_path.display());
                 ReadResult::Err
-            }
-        } else {
-            eprintln!("Failed to read directory \"{}\"", file_path.display());
-            ReadResult::Err
-        }
+            },
+            |dir| {
+                for entry in dir.flatten() {
+                    let file_path = entry.path();
+
+                    all_success &= matches!(read_source(file_path, paths, sources), ReadResult::Ok);
+                }
+
+                if all_success {
+                    ReadResult::Ok
+                } else {
+                    ReadResult::Err
+                }
+            },
+        )
     } else if file_path.is_file() {
         if matches!(file_path.extension(), Some(ext) if matches!(ext.to_str(), Some(ext) if ext == EXTENSION))
         {
@@ -130,11 +136,13 @@ pub struct DataFolder {
 }
 
 impl DataFolder {
+    #[must_use]
     pub fn path_from_source_index(&self, source_index: SourceIndex) -> Option<&PathBuf> {
         self.paths.get(&source_index)
     }
 
-    pub fn data(&self) -> &Data {
+    #[must_use]
+    pub const fn data(&self) -> &Data {
         &self.data
     }
 }
@@ -154,7 +162,7 @@ impl Reader {
             .map(|source| data.insert_source(source))
             .collect::<Vec<_>>();
 
-        Reader {
+        Self {
             paths,
             sources,
             data,
@@ -173,9 +181,12 @@ impl Reader {
 
             if !errors.is_empty() {
                 let mut report_data = ReportData::new(
-                    self.data.get_source(source_index).unwrap().to_owned(),
+                    self.data
+                        .get_source(source_index)
+                        .expect("The source must exist")
+                        .to_owned(),
                     "ERROR",
-                    self.paths.get(i).unwrap().display(),
+                    self.paths.get(i).expect("The path must exist").display(),
                     "[snip]",
                     if colored_errors {
                         ReportColors::default()
@@ -193,9 +204,9 @@ impl Reader {
         }
 
         if !reports.is_empty() {
-            for report_data in reports.iter_mut() {
+            for report_data in &mut reports {
                 for error in report_data.take_errors() {
-                    write!(output, "{}", error)?;
+                    write!(output, "{error}")?;
                 }
             }
         }

@@ -12,6 +12,10 @@ pub struct Span {
 }
 
 impl Span {
+    /// # Panics
+    /// Will panic if either of `start` or `end` do not fit within a `u32`.
+    /// These fields may or may not change to real `u32`s later.  If they do, this will no longer panic.
+    #[must_use]
     pub fn new(start: usize, end: usize) -> Self {
         Self {
             start: u32::try_from(start).expect("Span start doesn't fit within u32"),
@@ -19,15 +23,24 @@ impl Span {
         }
     }
 
+    /// # Panics
+    /// Will panic if `start` does not fit within a `u32`.
+    /// This field may or may not change to a real `u32` later.  If it does, this will no longer panic.
+    #[must_use]
     pub fn start_as_usize(&self) -> usize {
         usize::try_from(self.start).expect("Span start doesn't fit within usize")
     }
 
+    /// # Panics
+    /// Will panic if `end` does not fit within a `u32`.
+    /// This field may or may not change to a real `u32` later.  If it does, this will no longer panic.
+    #[must_use]
     pub fn end_as_usize(&self) -> usize {
         usize::try_from(self.end).expect("Span end doesn't fit within usize")
     }
 
-    pub fn combine_with(&self, other: &Span) -> Option<Span> {
+    #[must_use]
+    pub fn combine_with(&self, other: &Self) -> Option<Self> {
         Some(Self {
             start: self.start.min(other.start),
             end: self.end.max(other.end),
@@ -119,7 +132,7 @@ pub enum ReportColor {
 }
 
 impl ReportColor {
-    pub fn to_ansi_escape(self) -> &'static str {
+    pub const fn to_ansi_escape(self) -> &'static str {
         match self {
             Self::None => NONE,
             Self::Reset => RESET,
@@ -183,7 +196,7 @@ impl ReportColors {
         }
     }
 
-    pub fn colorless() -> Self {
+    pub const fn colorless() -> Self {
         Self {
             message: ReportColor::None,
             note: ReportColor::None,
@@ -219,7 +232,7 @@ where
     N: Display,
     T: Display,
 {
-    pub fn new(source: S, kind: K, name: N, trimmed: T, color_data: ReportColors) -> Self {
+    pub const fn new(source: S, kind: K, name: N, trimmed: T, color_data: ReportColors) -> Self {
         Self {
             source,
             kind,
@@ -230,11 +243,11 @@ where
         }
     }
 
-    pub fn has_errors(&self) -> bool {
+    pub const fn has_errors(&self) -> bool {
         !self.error_messages.is_empty()
     }
 
-    pub fn errors(&self) -> &[String] {
+    pub const fn errors(&self) -> &[String] {
         self.error_messages.as_slice()
     }
 
@@ -279,6 +292,8 @@ where
         })
     }
 
+    // TODO: split this into smaller functions
+    #[allow(clippy::too_many_lines)]
     fn report<S, K, N, T>(&self, report_data: &mut ReportData<S, K, N, T>)
     where
         S: Display,
@@ -309,15 +324,13 @@ where
             .rev()
             .take_while(|(_i, ch)| *ch != '\n')
             .last()
-            .map(|(i, _ch)| i)
-            .unwrap_or(span_start);
+            .map_or(span_start, |(i, _ch)| i);
 
         let column = source[line_start..]
             .char_indices()
             .take_while(|(i, _ch)| line_start + *i < span_start)
             .last()
-            .map(|(i, _ch)| i + 1)
-            .unwrap_or(1);
+            .map_or(1, |(i, _ch)| i + 1);
 
         let line_prefix_is_long = line_start <= span_start
             && source[line_start..span_start].chars().count()
@@ -331,8 +344,7 @@ where
                 *ch != '\n' && *steps < MAX_LINE_SCAN_LENGTH && *i < span_end - span_start
             })
             .last()
-            .map(|(_steps, (i, ch))| i + ch.len_utf8() + span_start)
-            .unwrap_or(span_end);
+            .map_or(span_end, |(_steps, (i, ch))| i + ch.len_utf8() + span_start);
 
         let second_highlight_start = source[..span_end]
             .char_indices()
@@ -343,8 +355,7 @@ where
                 *ch != '\n' && *steps < MAX_LINE_SCAN_LENGTH && *i >= span_start
             })
             .last()
-            .map(|(_steps, (i, _ch))| i)
-            .unwrap_or(span_start);
+            .map_or(span_start, |(_steps, (i, _ch))| i);
 
         let highlight_is_long = second_highlight_start > first_highlight_end;
 
@@ -352,8 +363,7 @@ where
             .char_indices()
             .take_while(|(_i, ch)| *ch != '\n')
             .last()
-            .map(|(i, ch)| i + ch.len_utf8() + span_end)
-            .unwrap_or(span_end);
+            .map_or(span_end, |(i, ch)| i + ch.len_utf8() + span_end);
 
         let line_suffix_is_long = second_highlight_start <= line_end
             && source[second_highlight_start..line_end].chars().count()
@@ -365,16 +375,14 @@ where
             .skip_while(|(_i, ch)| ch.is_ascii_whitespace())
             .take(1)
             .last()
-            .map(|(i, ch)| i + ch.len_utf8())
-            .unwrap_or(line_start);
+            .map_or(line_start, |(i, ch)| i + ch.len_utf8());
 
         let last_line_start = source[..last_line_end]
             .char_indices()
             .rev()
             .take_while(|(_i, ch)| *ch != '\n')
             .last()
-            .map(|(i, _ch)| i)
-            .unwrap_or(last_line_end);
+            .map_or(last_line_end, |(i, _ch)| i);
 
         let last_line_number = line_number
             .checked_sub(if last_line_start < line_start {
@@ -401,23 +409,22 @@ where
             .skip_while(|(_i, ch)| ch.is_ascii_whitespace())
             .take(1)
             .last()
-            .map(|(i, _ch)| i + line_end)
-            .unwrap_or(line_end);
+            .map_or(line_end, |(i, _ch)| i + line_end);
 
         let next_line_start = source[..next_line_start]
             .char_indices()
             .rev()
             .take_while(|(_i, ch)| *ch != '\n')
             .last()
-            .map(|(i, _ch)| i)
-            .unwrap_or(next_line_start);
+            .map_or(next_line_start, |(i, _ch)| i);
 
         let next_line_end = source[next_line_start..]
             .char_indices()
             .take_while(|(_i, ch)| *ch != '\n')
             .last()
-            .map(|(i, ch)| i + ch.len_utf8() + next_line_start)
-            .unwrap_or(next_line_start);
+            .map_or(next_line_start, |(i, ch)| {
+                i + ch.len_utf8() + next_line_start
+            });
 
         let next_line_number = line_number
             + source[line_start..next_line_start]
@@ -471,8 +478,7 @@ where
                     && *steps < MAX_LINE_SCAN_LENGTH + trimmed.chars().count()
             })
             .last()
-            .map(|(_steps, (i, _ch))| i)
-            .unwrap_or(span_start);
+            .map_or(span_start, |(_steps, (i, _ch))| i);
 
         let false_end = source[span_end..]
             .char_indices()
@@ -481,8 +487,7 @@ where
                 *ch != '\n' && *steps < MAX_LINE_SCAN_LENGTH + trimmed.chars().count()
             })
             .last()
-            .map(|(_steps, (i, ch))| span_end + i + ch.len_utf8())
-            .unwrap_or(line_end);
+            .map_or(line_end, |(_steps, (i, ch))| span_end + i + ch.len_utf8());
 
         if last_line_not_this_line {
             let false_end = source[last_line_start..]
@@ -492,8 +497,9 @@ where
                     *ch != '\n' && *steps < MAX_LINE_SCAN_LENGTH + trimmed.chars().count()
                 })
                 .last()
-                .map(|(_steps, (i, ch))| last_line_start + i + ch.len_utf8())
-                .unwrap_or(last_line_end);
+                .map_or(last_line_end, |(_steps, (i, ch))| {
+                    last_line_start + i + ch.len_utf8()
+                });
 
             buffer.push_str(
                 format!(
@@ -527,40 +533,40 @@ where
             buffer.push('\n');
         }
 
-        if highlight_is_long
-            && source[first_highlight_end..second_highlight_start]
-                .chars()
-                .any(|ch| ch == '\n')
-        {
+        buffer.push_str(
+            format!(
+                " {0}{1}{3:>2$} | {4}{5}",
+                report_data.color_data.esc,
+                report_data.color_data.divider.to_ansi_escape(),
+                line_number_digits,
+                line_number,
+                report_data.color_data.esc,
+                report_data.color_data.reset,
+            )
+            .as_str(),
+        );
+
+        if line_prefix_is_long && false_start > line_start {
             buffer.push_str(
                 format!(
-                    " {0}{1}{3:>2$} | {4}{5}",
+                    "{0}{1}{2}{3}{4} ",
                     report_data.color_data.esc,
-                    report_data.color_data.divider.to_ansi_escape(),
-                    line_number_digits,
-                    line_number,
+                    report_data.color_data.trim.to_ansi_escape(),
+                    trimmed,
                     report_data.color_data.esc,
                     report_data.color_data.reset,
                 )
                 .as_str(),
             );
+        }
 
-            if line_prefix_is_long && false_start > line_start {
-                buffer.push_str(
-                    format!(
-                        "{0}{1}{2}{3}{4} ",
-                        report_data.color_data.esc,
-                        report_data.color_data.trim.to_ansi_escape(),
-                        trimmed,
-                        report_data.color_data.esc,
-                        report_data.color_data.reset,
-                    )
-                    .as_str(),
-                );
-            }
+        buffer.push_str(Self::printed_source_map(&source[false_start..span_start]).as_str());
 
-            buffer.push_str(Self::printed_source_map(&source[false_start..span_start]).as_str());
-
+        if highlight_is_long
+            && source[first_highlight_end..second_highlight_start]
+                .chars()
+                .any(|ch| ch == '\n')
+        {
             buffer.push_str(
                 format!(
                     "{0}{1}{2}{3}{4}",
@@ -715,35 +721,6 @@ where
         } else if highlight_is_long {
             buffer.push_str(
                 format!(
-                    " {0}{1}{3:>2$} | {4}{5}",
-                    report_data.color_data.esc,
-                    report_data.color_data.divider.to_ansi_escape(),
-                    line_number_digits,
-                    line_number,
-                    report_data.color_data.esc,
-                    report_data.color_data.reset,
-                )
-                .as_str(),
-            );
-
-            if line_prefix_is_long && false_start > line_start {
-                buffer.push_str(
-                    format!(
-                        "{0}{1}{2}{3}{4} ",
-                        report_data.color_data.esc,
-                        report_data.color_data.trim.to_ansi_escape(),
-                        trimmed,
-                        report_data.color_data.esc,
-                        report_data.color_data.reset,
-                    )
-                    .as_str(),
-                );
-            }
-
-            buffer.push_str(Self::printed_source_map(&source[false_start..span_start]).as_str());
-
-            buffer.push_str(
-                format!(
                     "{0}{1}{2}{3}{4}",
                     report_data.color_data.esc,
                     report_data.color_data.highlight.to_ansi_escape(),
@@ -860,35 +837,6 @@ where
         } else {
             buffer.push_str(
                 format!(
-                    " {0}{1}{3:>2$} | {4}{5}",
-                    report_data.color_data.esc,
-                    report_data.color_data.divider.to_ansi_escape(),
-                    line_number_digits,
-                    line_number,
-                    report_data.color_data.esc,
-                    report_data.color_data.reset,
-                )
-                .as_str(),
-            );
-
-            if line_prefix_is_long && false_start > line_start {
-                buffer.push_str(
-                    format!(
-                        "{0}{1}{2}{3}{4} ",
-                        report_data.color_data.esc,
-                        report_data.color_data.trim.to_ansi_escape(),
-                        trimmed,
-                        report_data.color_data.esc,
-                        report_data.color_data.reset,
-                    )
-                    .as_str(),
-                );
-            }
-
-            buffer.push_str(Self::printed_source_map(&source[false_start..span_start]).as_str());
-
-            buffer.push_str(
-                format!(
                     "{0}{1}{2}{3}{4}",
                     report_data.color_data.esc,
                     report_data.color_data.highlight.to_ansi_escape(),
@@ -965,8 +913,9 @@ where
                     *ch != '\n' && *steps < MAX_LINE_SCAN_LENGTH + trimmed.chars().count()
                 })
                 .last()
-                .map(|(_steps, (i, ch))| next_line_start + i + ch.len_utf8())
-                .unwrap_or(next_line_end);
+                .map_or(next_line_end, |(_steps, (i, ch))| {
+                    next_line_start + i + ch.len_utf8()
+                });
 
             buffer.push_str(
                 format!(
@@ -1000,7 +949,7 @@ where
             buffer.push('\n');
         }
 
-        for note in self.notes().iter() {
+        for note in &self.notes() {
             buffer.push_str(report_data.color_data.esc);
             buffer.push_str(report_data.color_data.note.to_ansi_escape());
 

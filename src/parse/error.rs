@@ -13,7 +13,7 @@ pub struct ParseError {
 }
 
 impl ParseError {
-    pub fn new(kind: ParseErrorKind, span: Span) -> Self {
+    pub const fn new(kind: ParseErrorKind, span: Span) -> Self {
         Self { kind, span }
     }
 }

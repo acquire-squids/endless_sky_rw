@@ -20,7 +20,7 @@ pub struct Parser {
 }
 
 impl Parser {
-    pub fn new(source_index: SourceIndex) -> Self {
+    pub const fn new(source_index: SourceIndex) -> Self {
         Self {
             lexer: Lexer::new(source_index),
             errors: vec![],
@@ -28,7 +28,7 @@ impl Parser {
         }
     }
 
-    fn source_index(&self) -> SourceIndex {
+    const fn source_index(&self) -> SourceIndex {
         self.lexer.source_index()
     }
 
@@ -57,9 +57,12 @@ impl Parser {
         let mut tokens = vec![];
 
         while let Some(token) = self.peek(data)
-            && let TokenKind::Symbol = token.kind()
+            && token.kind() == TokenKind::Symbol
         {
-            tokens.push(self.advance(data).unwrap());
+            tokens.push(
+                self.advance(data)
+                    .expect("Because we're currently peeking, we know we can advance"),
+            );
         }
 
         let mut children = vec![];
@@ -72,18 +75,17 @@ impl Parser {
             self.indentation(data);
         }
 
-        if !children.is_empty() {
-            data.insert_node(Node::Parent { tokens, children })
-        } else {
+        if children.is_empty() {
             data.insert_node(Node::Some { tokens })
+        } else {
+            data.insert_node(Node::Parent { tokens, children })
         }
     }
 
-    fn indentation(&mut self, data: &mut Data) {
+    fn indentation(&mut self, data: &Data) {
         loop {
-            match self.peek(data).map(|t| t.kind()) {
-                None => return,
-                Some(TokenKind::Symbol) => return,
+            match self.peek(data).map(super::lex::token::Token::kind) {
+                None | Some(TokenKind::Symbol) => return,
                 Some(TokenKind::Indent) => {
                     self.advance(data);
                     self.indentation += 1;
@@ -96,7 +98,7 @@ impl Parser {
         }
     }
 
-    fn lex_error(&mut self, data: &mut Data) {
+    fn lex_error(&mut self, data: &Data) {
         while let Some(Err(_)) = self.lexer.peek(data) {
             let Some(Err(lex_error)) = self.lexer.next(data) else {
                 unreachable!()
@@ -109,7 +111,7 @@ impl Parser {
         }
     }
 
-    fn advance(&mut self, data: &mut Data) -> Option<Token> {
+    fn advance(&mut self, data: &Data) -> Option<Token> {
         self.lex_error(data);
 
         if let Some(Ok(token)) = self.lexer.next(data) {
@@ -119,7 +121,7 @@ impl Parser {
         }
     }
 
-    fn peek(&mut self, data: &mut Data) -> Option<&Token> {
+    fn peek(&mut self, data: &Data) -> Option<&Token> {
         self.lex_error(data);
 
         if let Some(Ok(token)) = self.lexer.peek(data) {

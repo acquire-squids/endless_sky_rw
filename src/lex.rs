@@ -19,6 +19,7 @@ pub struct Lexer {
     spaces: IndentKind,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum IndentKind {
     Space,
     Tab,
@@ -27,7 +28,7 @@ enum IndentKind {
 }
 
 impl Lexer {
-    pub fn new(source_index: SourceIndex) -> Self {
+    pub const fn new(source_index: SourceIndex) -> Self {
         Self {
             source_index,
             lookahead: None,
@@ -37,7 +38,7 @@ impl Lexer {
         }
     }
 
-    pub fn source_index(&self) -> SourceIndex {
+    pub const fn source_index(&self) -> SourceIndex {
         self.source_index
     }
 }
@@ -53,6 +54,24 @@ impl Lexer {
 
     pub fn next(&mut self, data: &Data) -> Option<LexItem> {
         self.advance(data)
+    }
+
+    fn indent(&mut self, start: usize, kind: IndentKind) -> LexItem {
+        let token = Token::new(TokenKind::Indent, Span::new(start, self.byte_offset));
+
+        if self.spaces != kind && !matches!(self.spaces, IndentKind::Unknown | IndentKind::Mixed) {
+            self.spaces = IndentKind::Mixed;
+            self.lookahead = Some(Ok(token));
+
+            return Err(LexError::new(
+                LexErrorKind::MixedIndentation,
+                Span::new(start, self.byte_offset),
+            ));
+        } else if matches!(self.spaces, IndentKind::Unknown) {
+            self.spaces = kind;
+        }
+
+        Ok(token)
     }
 
     fn advance(&mut self, data: &Data) -> Option<LexItem> {
@@ -80,38 +99,10 @@ impl Lexer {
                     )));
                 }
                 ' ' if self.on_new_line => {
-                    let token = Token::new(TokenKind::Indent, Span::new(start, self.byte_offset));
-
-                    if let IndentKind::Tab = self.spaces {
-                        self.spaces = IndentKind::Mixed;
-                        self.lookahead = Some(Ok(token));
-
-                        return Some(Err(LexError::new(
-                            LexErrorKind::MixedIndentation,
-                            Span::new(start, self.byte_offset),
-                        )));
-                    } else if let IndentKind::Unknown = self.spaces {
-                        self.spaces = IndentKind::Space;
-                    }
-
-                    return Some(Ok(token));
+                    return Some(self.indent(start, IndentKind::Space));
                 }
                 '\t' if self.on_new_line => {
-                    let token = Token::new(TokenKind::Indent, Span::new(start, self.byte_offset));
-
-                    if let IndentKind::Space = self.spaces {
-                        self.spaces = IndentKind::Mixed;
-                        self.lookahead = Some(Ok(token));
-
-                        return Some(Err(LexError::new(
-                            LexErrorKind::MixedIndentation,
-                            Span::new(start, self.byte_offset),
-                        )));
-                    } else if let IndentKind::Unknown = self.spaces {
-                        self.spaces = IndentKind::Tab;
-                    }
-
-                    return Some(Ok(token));
+                    return Some(self.indent(start, IndentKind::Tab));
                 }
                 ' ' | '\t' => {}
                 '#' => {
@@ -157,11 +148,11 @@ impl Lexer {
                             LexErrorKind::UnclosedString,
                             Span::new(start, after_quote),
                         )));
-                    } else {
-                        self.byte_offset += c.len_utf8();
-
-                        return Some(Ok(token));
                     }
+
+                    self.byte_offset += c.len_utf8();
+
+                    return Some(Ok(token));
                 }
                 _ if c.is_ascii() => {
                     self.on_new_line = false;

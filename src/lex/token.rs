@@ -7,19 +7,23 @@ pub struct Token {
 }
 
 impl Token {
-    pub fn new(kind: TokenKind, span: Span) -> Self {
+    #[must_use] 
+    pub const fn new(kind: TokenKind, span: Span) -> Self {
         Self { kind, span }
     }
 
+    #[must_use] 
     pub fn lexeme<'a>(&self, source: &'a str) -> Option<&'a str> {
         source.slice((self.span().start_as_usize())..(self.span().end_as_usize()))
     }
 
-    pub fn kind(&self) -> TokenKind {
+    #[must_use] 
+    pub const fn kind(&self) -> TokenKind {
         self.kind
     }
 
-    pub fn span(&self) -> Span {
+    #[must_use] 
+    pub const fn span(&self) -> Span {
         self.span
     }
 }

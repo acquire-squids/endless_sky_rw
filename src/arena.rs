@@ -49,11 +49,11 @@ pub struct ArenaIndex {
 }
 
 impl ArenaIndex {
-    pub fn generation(&self) -> u64 {
+    pub const fn generation(&self) -> u64 {
         self.generation
     }
 
-    pub fn index(&self) -> usize {
+    pub const fn index(&self) -> usize {
         self.index
     }
 }
@@ -64,7 +64,7 @@ enum Entry<T> {
 }
 
 pub struct Arena<T> {
-    arena: Vec<Entry<T>>,
+    entries: Vec<Entry<T>>,
     next_free: Vec<usize>,
     generation: u64,
     count: usize,
@@ -73,7 +73,7 @@ pub struct Arena<T> {
 impl<T> Default for Arena<T> {
     fn default() -> Self {
         Self {
-            arena: vec![],
+            entries: vec![],
             next_free: vec![],
             generation: 0,
             count: 0,
@@ -82,35 +82,35 @@ impl<T> Default for Arena<T> {
 }
 
 impl<T> Arena<T> {
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.count
     }
 
-    pub fn size(&self) -> usize {
-        self.arena.len()
+    pub const fn size(&self) -> usize {
+        self.entries.len()
     }
 
     pub fn occupied_by_usize(&self) -> impl Iterator<Item = usize> {
-        self.arena
+        self.entries
             .iter()
             .enumerate()
             .filter(|(_, e)| matches!(e, Entry::Occupied { .. }))
-            .flat_map(|(i, e)| match e {
+            .filter_map(|(i, e)| match e {
                 Entry::Occupied { .. } => Some(i),
                 Entry::Free => None,
             })
     }
 
     pub fn occupied(&self) -> impl Iterator<Item = ArenaIndex> {
-        self.arena
+        self.entries
             .iter()
             .enumerate()
             .filter(|(_, e)| matches!(e, Entry::Occupied { .. }))
-            .flat_map(|(i, e)| match e {
+            .filter_map(|(i, e)| match e {
                 Entry::Occupied { generation, .. } => Some(ArenaIndex {
                     generation: *generation,
                     index: i,
@@ -123,7 +123,7 @@ impl<T> Arena<T> {
         self.count += 1;
 
         if let Some(free_index) = self.next_free.pop()
-            && let Some(entry) = self.arena.get_mut(free_index)
+            && let Some(entry) = self.entries.get_mut(free_index)
         {
             *entry = Entry::Occupied {
                 generation: self.generation,
@@ -135,20 +135,20 @@ impl<T> Arena<T> {
                 index: free_index,
             }
         } else {
-            self.arena.push(Entry::Occupied {
+            self.entries.push(Entry::Occupied {
                 generation: self.generation,
                 value,
             });
 
             ArenaIndex {
                 generation: self.generation,
-                index: self.arena.len() - 1,
+                index: self.entries.len() - 1,
             }
         }
     }
 
     pub fn get_index_by_usize(&self, index: usize) -> Option<ArenaIndex> {
-        if let Entry::Occupied { generation, .. } = self.arena.get(index)? {
+        if let Entry::Occupied { generation, .. } = self.entries.get(index)? {
             Some(ArenaIndex {
                 generation: *generation,
                 index,
@@ -159,7 +159,7 @@ impl<T> Arena<T> {
     }
 
     pub fn get_by_usize(&self, index: usize) -> Option<&T> {
-        if let Entry::Occupied { value, .. } = self.arena.get(index)? {
+        if let Entry::Occupied { value, .. } = self.entries.get(index)? {
             Some(value)
         } else {
             None
@@ -167,7 +167,7 @@ impl<T> Arena<T> {
     }
 
     pub fn get(&self, index: ArenaIndex) -> Option<&T> {
-        if let Entry::Occupied { generation, .. } = self.arena.get(index.index)?
+        if let Entry::Occupied { generation, .. } = self.entries.get(index.index)?
             && *generation == index.generation
         {
             self.get_by_usize(index.index)
@@ -177,7 +177,7 @@ impl<T> Arena<T> {
     }
 
     pub fn get_mut_by_usize(&mut self, index: usize) -> Option<&mut T> {
-        if let Entry::Occupied { value, .. } = self.arena.get_mut(index)? {
+        if let Entry::Occupied { value, .. } = self.entries.get_mut(index)? {
             Some(value)
         } else {
             None
@@ -185,7 +185,7 @@ impl<T> Arena<T> {
     }
 
     pub fn get_mut(&mut self, index: ArenaIndex) -> Option<&mut T> {
-        if let Entry::Occupied { generation, .. } = self.arena.get(index.index)?
+        if let Entry::Occupied { generation, .. } = self.entries.get(index.index)?
             && *generation == index.generation
         {
             self.get_mut_by_usize(index.index)
@@ -195,7 +195,7 @@ impl<T> Arena<T> {
     }
 
     pub fn remove_by_usize(&mut self, index: usize) -> Option<T> {
-        if let to_remove @ Entry::Occupied { .. } = self.arena.get_mut(index)? {
+        if let to_remove @ Entry::Occupied { .. } = self.entries.get_mut(index)? {
             let value = mem::replace(to_remove, Entry::Free);
 
             let Entry::Occupied { value, .. } = value else {
@@ -214,7 +214,7 @@ impl<T> Arena<T> {
     }
 
     pub fn remove(&mut self, index: ArenaIndex) -> Option<T> {
-        if let Entry::Occupied { generation, .. } = self.arena.get(index.index)?
+        if let Entry::Occupied { generation, .. } = self.entries.get(index.index)?
             && *generation == index.generation
         {
             self.remove_by_usize(index.index)

@@ -49,7 +49,8 @@ impl Default for Data {
 }
 
 impl Data {
-    pub fn error_node(&self) -> NodeIndex {
+    #[must_use]
+    pub const fn error_node(&self) -> NodeIndex {
         self.error_node
     }
 
@@ -57,7 +58,8 @@ impl Data {
         self.root_nodes.push((source_index, node_index));
     }
 
-    pub fn root_nodes(&self) -> &[(SourceIndex, NodeIndex)] {
+    #[must_use]
+    pub const fn root_nodes(&self) -> &[(SourceIndex, NodeIndex)] {
         self.root_nodes.as_slice()
     }
 
@@ -65,6 +67,7 @@ impl Data {
         self.nodes.insert(node).into()
     }
 
+    #[must_use]
     pub fn get_node(&self, index: NodeIndex) -> Option<&Node> {
         self.nodes.get(index.into())
     }
@@ -75,8 +78,7 @@ impl Data {
 
     pub fn push_child(&mut self, node_index: NodeIndex, child_index: NodeIndex) {
         match self.get_mut_node(node_index) {
-            None => {}
-            Some(Node::Error) => {}
+            None | Some(Node::Error) => {}
             Some(some @ Node::Some { .. }) => {
                 let Node::Some { mut tokens } = mem::replace(
                     some,
@@ -104,44 +106,39 @@ impl Data {
         }
     }
 
+    #[must_use]
     pub fn get_children(&self, node_index: NodeIndex) -> Option<&[NodeIndex]> {
         match self.get_node(node_index) {
-            None => None,
-            Some(Node::Error) => None,
-            Some(Node::Some { .. }) => None,
+            None | Some(Node::Error | Node::Some { .. }) => None,
             Some(Node::Parent { children, .. }) => Some(children.as_slice()),
         }
     }
 
     pub fn get_mut_children(&mut self, node_index: NodeIndex) -> Option<&mut [NodeIndex]> {
         match self.get_mut_node(node_index) {
-            None => None,
-            Some(Node::Error) => None,
-            Some(Node::Some { .. }) => None,
+            None | Some(Node::Error | Node::Some { .. }) => None,
             Some(Node::Parent { children, .. }) => Some(children),
         }
     }
 
     pub fn push_token(&mut self, node_index: NodeIndex, token: Token) {
         match self.get_mut_node(node_index) {
-            None => {}
-            Some(Node::Error) => {}
+            None | Some(Node::Error) => {}
             Some(Node::Some { tokens } | Node::Parent { tokens, .. }) => tokens.push(token),
         }
     }
 
+    #[must_use]
     pub fn get_tokens(&self, node_index: NodeIndex) -> Option<&[Token]> {
         match self.get_node(node_index) {
-            None => None,
-            Some(Node::Error) => None,
+            None | Some(Node::Error) => None,
             Some(Node::Some { tokens } | Node::Parent { tokens, .. }) => Some(tokens.as_slice()),
         }
     }
 
     pub fn get_mut_tokens(&mut self, node_index: NodeIndex) -> Option<&mut [Token]> {
         match self.get_mut_node(node_index) {
-            None => None,
-            Some(Node::Error) => None,
+            None | Some(Node::Error) => None,
             Some(Node::Some { tokens } | Node::Parent { tokens, .. }) => Some(tokens),
         }
     }
@@ -150,8 +147,11 @@ impl Data {
         self.sources.insert(source).into()
     }
 
+    #[must_use]
     pub fn get_source(&self, index: SourceIndex) -> Option<&str> {
-        self.sources.get(index.into()).map(|s| s.as_str())
+        self.sources
+            .get(index.into())
+            .map(std::string::String::as_str)
     }
 
     pub fn push_source<T: fmt::Display>(
@@ -159,28 +159,27 @@ impl Data {
         index: SourceIndex,
         append: T,
     ) -> Option<(usize, usize)> {
-        if let Some(source) = self.sources.get_mut(index.into()) {
+        self.sources.get_mut(index.into()).map(|source| {
             let source_len = source.len();
 
-            let _ = write!(source, "{}", append);
+            let _ = write!(source, "{append}");
 
-            Some((source_len, source.len()))
-        } else {
-            None
-        }
+            (source_len, source.len())
+        })
     }
 
+    #[must_use]
     pub fn get_lexeme(&self, source_index: SourceIndex, token: Token) -> Option<&str> {
         self.get_source(source_index).and_then(|s| token.lexeme(s))
     }
 
+    #[must_use]
     pub fn try_get_number(
         &self,
         source_index: SourceIndex,
         token: Token,
     ) -> Option<Result<f64, ParseFloatError>> {
-        self.get_lexeme(source_index, token)
-            .map(|l| l.parse::<f64>())
+        self.get_lexeme(source_index, token).map(str::parse::<f64>)
     }
 
     pub fn filter<P>(&self, mut predicate: P) -> impl Iterator<Item = (SourceIndex, NodeIndex)>
@@ -217,6 +216,7 @@ impl Data {
 }
 
 impl Data {
+    #[allow(clippy::missing_errors_doc)]
     pub fn write(
         &self,
         output: &mut String,
@@ -235,6 +235,7 @@ impl Data {
         )
     }
 
+    #[allow(clippy::missing_errors_doc)]
     pub fn write_root_nodes(
         &self,
         output: &mut String,
@@ -274,7 +275,7 @@ impl Data {
         infinity_prevention.insert((source_index, node_index));
 
         // TODO: don't silently error
-        if let Some(Node::Error) = self.get_node(node_index) {
+        if matches!(self.get_node(node_index), Some(Node::Error)) {
             return Ok(());
         }
 
