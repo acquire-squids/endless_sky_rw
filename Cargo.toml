@@ -1,6 +1,9 @@
 [package]
 name = "endless_sky_rw"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2024"
+
+[profile.release]
+lto = true
 
 [dependencies]
