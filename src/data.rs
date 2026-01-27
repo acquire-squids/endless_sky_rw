@@ -318,6 +318,8 @@ impl Data {
             }
         }
 
+        infinity_prevention.remove(&(source_index, node_index));
+
         Ok(())
     }
 }

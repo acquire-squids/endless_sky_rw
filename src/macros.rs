@@ -15,9 +15,10 @@ macro_rules! node_path_iter {
                     Some(Some($first))
                 )
             })
-            $(.flat_map(|&node| {
-                $crate::node_path_iter!(@nested data => node; $($tail)+)
+            $(.flat_map(move |node| {
+                $crate::node_path_iter!(@nested data => (source_index, node); $($tail)+)
             }))?
+            .map(move |node| (source_index, node))
         }
     };
 
@@ -39,8 +40,8 @@ macro_rules! node_path_iter {
                     Some(Some($first))
                 )
             })
-            $(.flat_map(|&node| {
-                $crate::node_path_iter!(@nested $data => node; $($tail)+)
+            $(.flat_map(|(source, node)| {
+                $crate::node_path_iter!(@nested $data => (source, node); $($tail)+)
             }))?
         }
     };
