@@ -393,7 +393,7 @@ where
             } else {
                 0
             })
-            .unwrap_or(line_number);
+            .map_or(line_number, |last_line_number| last_line_number);
 
         let last_line_not_this_line = last_line_end <= line_start
             && source[last_line_end..line_start]
@@ -432,8 +432,10 @@ where
                 .filter(|ch| *ch == '\n')
                 .count();
 
-        let line_number_digits =
-            ((next_line_number + 1).checked_ilog10().unwrap_or_default() + 1) as usize;
+        let line_number_digits = ((next_line_number + 1)
+            .checked_ilog10()
+            .map_or(0, |line_number_digits| line_number_digits)
+            + 1) as usize;
 
         let next_line_not_this_line = line_end <= next_line_start
             && source[line_end..next_line_start]

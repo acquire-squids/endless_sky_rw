@@ -93,11 +93,17 @@ macro_rules! tree_from_tokens {
             } else {
                 let node = data.insert_node(Node::Some { tokens: vec![], });
 
-                let span = data.push_source(source_index, $token).unwrap();
+                let span = data
+                    .push_source(source_index, $token)
+                    .expect("The data is verified to have the source by the above condition");
+
                 data.push_token(node, Token::new(TokenKind::Symbol, Span::new(span.0, span.1)));
 
                 $(
-                    let span = data.push_source(source_index, $tokens).unwrap();
+                    let span = data
+                        .push_source(source_index, $tokens)
+                        .expect("The data is verified to have the source by the above condition");
+
                     data.push_token(node, Token::new(TokenKind::Symbol, Span::new(span.0, span.1)));
                 )*
 
