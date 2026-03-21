@@ -20,12 +20,23 @@ use std::{
     collections::HashMap,
     fs,
     io::{self, Write},
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 
 const EXTENSION: &str = "txt";
 
-pub fn read_path<T: Into<PathBuf>>(path: T) -> Option<DataFolder> {
+pub fn read_path<T>(path: T) -> Option<DataFolder>
+where
+    T: Into<PathBuf>,
+{
+    read_path_and_ignore_if(path, |_| false)
+}
+
+pub fn read_path_and_ignore_if<T, F>(path: T, mut ignore_if: F) -> Option<DataFolder>
+where
+    T: Into<PathBuf>,
+    F: FnMut(&Path) -> bool,
+{
     let base_path = T::into(path);
 
     let mut paths = vec![];
@@ -34,7 +45,7 @@ pub fn read_path<T: Into<PathBuf>>(path: T) -> Option<DataFolder> {
     let file_path = base_path;
 
     if matches!(
-        read_source(file_path, &mut paths, &mut sources),
+        read_source(file_path, &mut paths, &mut sources, &mut ignore_if),
         ReadResult::Ok
     ) {
         let reader = Reader::new(paths, sources);
@@ -51,7 +62,6 @@ pub fn read_path<T: Into<PathBuf>>(path: T) -> Option<DataFolder> {
     None
 }
 
-#[cfg(all(target_family = "wasm", target_os = "unknown"))]
 pub fn read_upload(paths: Vec<String>, sources: Vec<String>) -> Option<(DataFolder, Vec<u8>)> {
     let mut error_buffer = vec![];
 
@@ -70,63 +80,76 @@ enum ReadResult {
     Err,
 }
 
-fn read_source(
+fn read_source<F>(
     file_path: PathBuf,
     paths: &mut Vec<PathBuf>,
     sources: &mut Vec<String>,
-) -> ReadResult {
+    ignore_if: &mut F,
+) -> ReadResult
+where
+    F: FnMut(&Path) -> bool,
+{
     if !file_path.exists() {
         eprintln!("File \"{}\" does not exist", file_path.display());
         ReadResult::Err
-    } else if file_path.is_dir() {
-        let mut all_success = true;
+    } else {
+        if !ignore_if(file_path.as_path()) {
+            if file_path.is_dir() {
+                let mut all_success = true;
 
-        fs::read_dir(&file_path).map_or_else(
-            |_| {
-                eprintln!("Failed to read directory \"{}\"", file_path.display());
-                ReadResult::Err
-            },
-            |dir| {
-                for entry in dir.flatten() {
-                    let file_path = entry.path();
+                fs::read_dir(&file_path).map_or_else(
+                    |_| {
+                        eprintln!("Failed to read directory \"{}\"", file_path.display());
+                        ReadResult::Err
+                    },
+                    |dir| {
+                        for entry in dir.flatten() {
+                            let file_path = entry.path();
 
-                    all_success &= matches!(read_source(file_path, paths, sources), ReadResult::Ok);
-                }
+                            all_success &= matches!(
+                                read_source(file_path, paths, sources, ignore_if),
+                                ReadResult::Ok
+                            );
+                        }
 
-                if all_success {
-                    ReadResult::Ok
+                        if all_success {
+                            ReadResult::Ok
+                        } else {
+                            ReadResult::Err
+                        }
+                    },
+                )
+            } else if file_path.is_file() {
+                if matches!(file_path.extension(), Some(ext) if matches!(ext.to_str(), Some(ext) if ext == EXTENSION))
+                {
+                    match fs::read_to_string(&file_path) {
+                        Ok(source) => {
+                            paths.push(file_path);
+                            sources.push(source);
+
+                            ReadResult::Ok
+                        }
+                        Err(error) => {
+                            eprintln!("{error}");
+                            eprintln!("Failed to read file (see above)");
+
+                            ReadResult::Err
+                        }
+                    }
                 } else {
-                    ReadResult::Err
-                }
-            },
-        )
-    } else if file_path.is_file() {
-        if matches!(file_path.extension(), Some(ext) if matches!(ext.to_str(), Some(ext) if ext == EXTENSION))
-        {
-            match fs::read_to_string(&file_path) {
-                Ok(source) => {
-                    paths.push(file_path);
-                    sources.push(source);
-
                     ReadResult::Ok
                 }
-                Err(error) => {
-                    eprintln!("{error}");
-                    eprintln!("Failed to read file (see above)");
+            } else {
+                eprintln!(
+                    "Path \"{}\" was not a file or a directory",
+                    file_path.display()
+                );
 
-                    ReadResult::Err
-                }
+                ReadResult::Err
             }
         } else {
             ReadResult::Ok
         }
-    } else {
-        eprintln!(
-            "Path \"{}\" was not a file or a directory",
-            file_path.display()
-        );
-
-        ReadResult::Err
     }
 }
 
