@@ -89,67 +89,65 @@ fn read_source<F>(
 where
     F: FnMut(&Path) -> bool,
 {
-    if !file_path.exists() {
-        eprintln!("File \"{}\" does not exist", file_path.display());
-        ReadResult::Err
-    } else {
-        if !ignore_if(file_path.as_path()) {
-            if file_path.is_dir() {
-                let mut all_success = true;
+    if file_path.exists() {
+        if ignore_if(file_path.as_path()) {
+            ReadResult::Ok
+        } else if file_path.is_dir() {
+            let mut all_success = true;
 
-                fs::read_dir(&file_path).map_or_else(
-                    |_| {
-                        eprintln!("Failed to read directory \"{}\"", file_path.display());
-                        ReadResult::Err
-                    },
-                    |dir| {
-                        for entry in dir.flatten() {
-                            let file_path = entry.path();
+            fs::read_dir(&file_path).map_or_else(
+                |_| {
+                    eprintln!("Failed to read directory \"{}\"", file_path.display());
+                    ReadResult::Err
+                },
+                |dir| {
+                    for entry in dir.flatten() {
+                        let file_path = entry.path();
 
-                            all_success &= matches!(
-                                read_source(file_path, paths, sources, ignore_if),
-                                ReadResult::Ok
-                            );
-                        }
-
-                        if all_success {
+                        all_success &= matches!(
+                            read_source(file_path, paths, sources, ignore_if),
                             ReadResult::Ok
-                        } else {
-                            ReadResult::Err
-                        }
-                    },
-                )
-            } else if file_path.is_file() {
-                if matches!(file_path.extension(), Some(ext) if matches!(ext.to_str(), Some(ext) if ext == EXTENSION))
-                {
-                    match fs::read_to_string(&file_path) {
-                        Ok(source) => {
-                            paths.push(file_path);
-                            sources.push(source);
-
-                            ReadResult::Ok
-                        }
-                        Err(error) => {
-                            eprintln!("{error}");
-                            eprintln!("Failed to read file (see above)");
-
-                            ReadResult::Err
-                        }
+                        );
                     }
-                } else {
-                    ReadResult::Ok
+
+                    if all_success {
+                        ReadResult::Ok
+                    } else {
+                        ReadResult::Err
+                    }
+                },
+            )
+        } else if file_path.is_file() {
+            if matches!(file_path.extension(), Some(ext) if matches!(ext.to_str(), Some(ext) if ext == EXTENSION))
+            {
+                match fs::read_to_string(&file_path) {
+                    Ok(source) => {
+                        paths.push(file_path);
+                        sources.push(source);
+
+                        ReadResult::Ok
+                    }
+                    Err(error) => {
+                        eprintln!("{error}");
+                        eprintln!("Failed to read file (see above)");
+
+                        ReadResult::Err
+                    }
                 }
             } else {
-                eprintln!(
-                    "Path \"{}\" was not a file or a directory",
-                    file_path.display()
-                );
-
-                ReadResult::Err
+                ReadResult::Ok
             }
         } else {
-            ReadResult::Ok
+            eprintln!(
+                "Path \"{}\" was not a file or a directory",
+                file_path.display()
+            );
+
+            ReadResult::Err
         }
+    } else {
+        eprintln!("File \"{}\" does not exist", file_path.display());
+        ReadResult::Err
     }
 }
 
