@@ -48,6 +48,20 @@ where
         read_source(file_path, &mut paths, &mut sources, &mut ignore_if),
         ReadResult::Ok
     ) {
+        let mut zipped = paths.into_iter().zip(sources).collect::<Vec<_>>();
+
+        zipped.sort_unstable();
+
+        let (paths, sources) = zipped.into_iter().fold(
+            (vec![], vec![]),
+            |(mut paths, mut sources), (path, source)| {
+                paths.push(path);
+                sources.push(source);
+
+                (paths, sources)
+            },
+        );
+
         let reader = Reader::new(paths, sources);
 
         match reader.read(&mut io::stdout(), true) {
