@@ -27,7 +27,7 @@ impl Span {
     /// Will panic if `start` does not fit within a `u32`.
     /// This field may or may not change to a real `u32` later.  If it does, this will no longer panic.
     #[must_use]
-    pub fn start_as_usize(&self) -> usize {
+    pub fn start_as_usize(self) -> usize {
         usize::try_from(self.start).expect("Span start doesn't fit within usize")
     }
 
@@ -35,16 +35,16 @@ impl Span {
     /// Will panic if `end` does not fit within a `u32`.
     /// This field may or may not change to a real `u32` later.  If it does, this will no longer panic.
     #[must_use]
-    pub fn end_as_usize(&self) -> usize {
+    pub fn end_as_usize(self) -> usize {
         usize::try_from(self.end).expect("Span end doesn't fit within usize")
     }
 
     #[must_use]
-    pub fn combine_with(&self, other: &Self) -> Option<Self> {
-        Some(Self {
+    pub fn combine_with(self, other: Self) -> Self {
+        Self {
             start: self.start.min(other.start),
             end: self.end.max(other.end),
-        })
+        }
     }
 }
 
@@ -132,6 +132,7 @@ pub enum ReportColor {
 }
 
 impl ReportColor {
+    #[must_use]
     pub const fn to_ansi_escape(self) -> &'static str {
         match self {
             Self::None => NONE,
@@ -184,10 +185,12 @@ impl Default for ReportColors {
 }
 
 impl ReportColors {
+    #[must_use]
     pub fn error() -> Self {
         Self::default()
     }
 
+    #[must_use]
     pub fn warning() -> Self {
         Self {
             message: ReportColor::BrightYellow,
@@ -196,6 +199,7 @@ impl ReportColors {
         }
     }
 
+    #[must_use]
     pub const fn colorless() -> Self {
         Self {
             message: ReportColor::None,
@@ -328,7 +332,7 @@ where
 
         let column = source[line_start..]
             .char_indices()
-            .take_while(|(i, _ch)| line_start + *i < span_start)
+            .take_while(|(i, _ch)| line_start + *i <= span_start)
             .last()
             .map_or(1, |(i, _ch)| i + 1);
 
