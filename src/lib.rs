@@ -208,7 +208,13 @@ impl Reader {
         let mut reports = vec![];
 
         for (i, &source_index) in self.sources.iter().enumerate() {
-            let mut parser = Parser::new(source_index);
+            let mut parser = Parser::new(
+                source_index,
+                self.data
+                    .get_source(source_index)
+                    .expect("We know the current source exists because we're iterating over it")
+                    .to_string(),
+            );
 
             parser.parse(&mut self.data);
 

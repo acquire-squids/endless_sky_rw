@@ -6,13 +6,12 @@ use self::{
     token::{Token, TokenKind},
 };
 
-use crate::data::{Data, SourceIndex};
 use crate::reporting::Span;
 
-type LexItem = Result<Token, LexError>;
+pub type LexItem = Result<Token, LexError>;
 
 pub struct Lexer {
-    source_index: SourceIndex,
+    source: String,
     lookahead: Option<LexItem>,
     on_new_line: bool,
     byte_offset: usize,
@@ -28,9 +27,9 @@ enum IndentKind {
 }
 
 impl Lexer {
-    pub const fn new(source_index: SourceIndex) -> Self {
+    pub const fn new(source: String) -> Self {
         Self {
-            source_index,
+            source,
             lookahead: None,
             on_new_line: true,
             byte_offset: 0,
@@ -38,26 +37,30 @@ impl Lexer {
         }
     }
 
-    pub const fn source_index(&self) -> SourceIndex {
-        self.source_index
+    pub const fn source(&self) -> &str {
+        self.source.as_str()
+    }
+
+    const fn at(&self) -> usize {
+        self.byte_offset
+    }
+
+    fn ahead(&self) -> Option<char> {
+        self.source()
+            .get((self.at())..)
+            .and_then(|text| text.chars().next())
+    }
+
+    fn advance(&mut self) {
+        if let Some(ch) = self.ahead() {
+            self.byte_offset += ch.len_utf8();
+        }
     }
 }
 
 impl Lexer {
-    pub fn peek(&mut self, data: &Data) -> Option<&LexItem> {
-        if self.lookahead.is_none() {
-            self.lookahead = self.advance(data);
-        }
-
-        self.lookahead.as_ref()
-    }
-
-    pub fn next(&mut self, data: &Data) -> Option<LexItem> {
-        self.advance(data)
-    }
-
     fn indent(&mut self, start: usize, kind: IndentKind) -> LexItem {
-        let token = Token::new(TokenKind::Indent, Span::new(start, self.byte_offset));
+        let token = Token::new(TokenKind::Indent, Span::new(start, self.at()));
 
         if self.spaces != kind && !matches!(self.spaces, IndentKind::Unknown | IndentKind::Mixed) {
             self.spaces = IndentKind::Mixed;
@@ -65,7 +68,7 @@ impl Lexer {
 
             return Err(LexError::new(
                 LexErrorKind::MixedIndentation,
-                Span::new(start, self.byte_offset),
+                Span::new(start, self.at()),
             ));
         } else if matches!(self.spaces, IndentKind::Unknown) {
             self.spaces = kind;
@@ -73,21 +76,20 @@ impl Lexer {
 
         Ok(token)
     }
+}
 
-    fn advance(&mut self, data: &Data) -> Option<LexItem> {
+impl Iterator for Lexer {
+    type Item = LexItem;
+
+    fn next(&mut self) -> Option<LexItem> {
         if let Some(lookahead) = self.lookahead.take() {
             return Some(lookahead);
         }
 
-        while let Some(c) = data
-            .get_source(self.source_index())
-            .into_iter()
-            .flat_map(|source| source[(self.byte_offset)..].chars())
-            .next()
-        {
-            let start = self.byte_offset;
+        while let Some(c) = self.ahead() {
+            let start = self.at();
 
-            self.byte_offset += c.len_utf8();
+            self.advance();
 
             match c {
                 '\n' => {
@@ -106,40 +108,27 @@ impl Lexer {
                 }
                 ' ' | '\t' => {}
                 '#' => {
-                    while let Some(n) = data
-                        .get_source(self.source_index())
-                        .into_iter()
-                        .flat_map(|source| source[(self.byte_offset)..].chars())
-                        .next()
+                    while let Some(n) = self.ahead()
                         && n != '\n'
                     {
-                        self.byte_offset += n.len_utf8();
+                        self.advance();
                     }
                 }
                 '`' | '"' => {
                     self.on_new_line = false;
 
-                    let after_quote = self.byte_offset;
+                    let after_quote = self.at();
 
-                    while let Some(n) = data
-                        .get_source(self.source_index())
-                        .into_iter()
-                        .flat_map(|source| source[(self.byte_offset)..].chars())
-                        .next()
+                    while let Some(n) = self.ahead()
                         && n != '\n'
                         && n != c
                     {
-                        self.byte_offset += n.len_utf8();
+                        self.advance();
                     }
 
-                    let token =
-                        Token::new(TokenKind::Symbol, Span::new(after_quote, self.byte_offset));
+                    let token = Token::new(TokenKind::Symbol, Span::new(after_quote, self.at()));
 
-                    if let Some(n) = data
-                        .get_source(self.source_index())
-                        .into_iter()
-                        .flat_map(|source| source[(self.byte_offset)..].chars())
-                        .next()
+                    if let Some(n) = self.ahead()
                         && n != c
                     {
                         self.lookahead = Some(Ok(token));
@@ -150,27 +139,23 @@ impl Lexer {
                         )));
                     }
 
-                    self.byte_offset += c.len_utf8();
+                    self.advance();
 
                     return Some(Ok(token));
                 }
                 _ if c.is_ascii() => {
                     self.on_new_line = false;
 
-                    while let Some(n) = data
-                        .get_source(self.source_index())
-                        .into_iter()
-                        .flat_map(|source| source[(self.byte_offset)..].chars())
-                        .next()
+                    while let Some(n) = self.ahead()
                         && !n.is_ascii_whitespace()
                         && n.is_ascii()
                     {
-                        self.byte_offset += n.len_utf8();
+                        self.advance();
                     }
 
                     return Some(Ok(Token::new(
                         TokenKind::Symbol,
-                        Span::new(start, self.byte_offset),
+                        Span::new(start, self.at()),
                     )));
                 }
                 _ => {
@@ -178,7 +163,7 @@ impl Lexer {
 
                     return Some(Err(LexError::new(
                         LexErrorKind::NonAsciiCharacter,
-                        Span::new(start, self.byte_offset),
+                        Span::new(start, self.at()),
                     )));
                 }
             }
