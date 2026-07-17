@@ -1,94 +1,121 @@
 #![allow(dead_code)]
 
 use std::{
-    fmt::Display,
-    ops::{Bound, RangeBounds},
+    error::Error,
+    fmt,
+    io::{self, Write},
 };
+
+#[derive(Debug)]
+pub struct Spanned<T> {
+    kind: T,
+    span: Span,
+}
+
+impl<T> Spanned<T> {
+    pub const fn new(kind: T, span: Span) -> Self {
+        Self { kind, span }
+    }
+
+    pub const fn kind(&self) -> &T {
+        &self.kind
+    }
+
+    pub const fn span(&self) -> Span {
+        self.span
+    }
+
+    pub fn transmute<F, U>(self, mut f: F) -> Spanned<U>
+    where
+        F: FnMut(T) -> U,
+    {
+        Spanned {
+            kind: f(self.kind),
+            span: self.span,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Span {
-    start: u32,
-    end: u32,
+    source_id: usize,
+    start: usize,
+    end: usize,
 }
 
 impl Span {
-    /// # Panics
-    /// Will panic if either of `start` or `end` do not fit within a `u32`.
-    /// These fields may or may not change to real `u32`s later.  If they do, this will no longer panic.
     #[must_use]
-    pub fn new(start: usize, end: usize) -> Self {
+    pub const fn new(source_id: usize, start: usize, end: usize) -> Self {
         Self {
-            start: u32::try_from(start).expect("Span start doesn't fit within u32"),
-            end: u32::try_from(end).expect("Span end doesn't fit within u32"),
+            source_id,
+            start,
+            end,
         }
     }
 
-    /// # Panics
-    /// Will panic if `start` does not fit within a `u32`.
-    /// This field may or may not change to a real `u32` later.  If it does, this will no longer panic.
     #[must_use]
-    pub fn start_as_usize(self) -> usize {
-        usize::try_from(self.start).expect("Span start doesn't fit within usize")
-    }
-
-    /// # Panics
-    /// Will panic if `end` does not fit within a `u32`.
-    /// This field may or may not change to a real `u32` later.  If it does, this will no longer panic.
-    #[must_use]
-    pub fn end_as_usize(self) -> usize {
-        usize::try_from(self.end).expect("Span end doesn't fit within usize")
+    pub const fn source_id(&self) -> usize {
+        self.source_id
     }
 
     #[must_use]
-    pub fn combine_with(self, other: Self) -> Self {
-        Self {
-            start: self.start.min(other.start),
-            end: self.end.max(other.end),
+    pub const fn start(&self) -> usize {
+        self.start
+    }
+
+    #[must_use]
+    pub const fn end(&self) -> usize {
+        self.end
+    }
+
+    #[must_use]
+    pub fn lexeme<'a>(&self, source: &'a str) -> Option<&'a str> {
+        source.get((self.start())..(self.end()))
+    }
+
+    #[must_use]
+    pub fn line(&self, source: &str) -> Option<usize> {
+        source
+            .get(..(self.start()))
+            .into_iter()
+            .flat_map(|text| text.lines())
+            .enumerate()
+            .last()
+            .map(|(line_number, _)| line_number + 1)
+    }
+
+    #[must_use]
+    pub fn column(&self, source: &str) -> Option<usize> {
+        source
+            .get(..(self.start()))
+            .into_iter()
+            .flat_map(|text| text.lines())
+            .enumerate()
+            .last()
+            .into_iter()
+            .flat_map(|(_, text)| text.chars().enumerate())
+            .last()
+            .map(|(column_number, _)| column_number + 1)
+    }
+
+    #[must_use]
+    pub fn combine_with(&self, other: Self) -> Option<Self> {
+        if self.source_id() == other.source_id() {
+            Some(Self::new(
+                self.source_id(),
+                self.start().min(other.start()),
+                self.end().max(other.end()),
+            ))
+        } else {
+            None
         }
     }
 }
 
-pub trait Spannable {
-    type Slice;
-
-    fn slice<R: RangeBounds<usize>>(&self, bounds: R) -> Option<Self::Slice>;
-
-    fn up_to(&self, end: usize) -> Option<Self::Slice> {
-        self.slice(0..end)
-    }
-
-    fn starting_at(&self, start: usize) -> Option<Self::Slice> {
-        self.slice(start..)
-    }
-}
-
-impl<'a> Spannable for &'a str {
-    type Slice = &'a str;
-
-    fn slice<R: RangeBounds<usize>>(&self, bounds: R) -> Option<Self::Slice> {
-        let start_bound = match bounds.start_bound() {
-            Bound::Included(num) => *num,
-            Bound::Excluded(num) => num
-                .checked_add(1)
-                .expect("Overflow when adding 1 to Spannable slice start"),
-            Bound::Unbounded => 0,
-        };
-
-        let end_bound = match bounds.end_bound() {
-            Bound::Included(num) => num
-                .checked_add(1)
-                .expect("Overflow when adding 1 to Spannable slice end"),
-            Bound::Excluded(num) => *num,
-            Bound::Unbounded => str::len(self),
-        };
-
-        str::get(self, start_bound..end_bound)
-    }
-}
-
-const ESC: &str = "\x1B";
-const RESET: &str = "[0m";
-const NONE: &str = "";
+pub const ESC: &str = "\x1B";
+pub const BOLD: &str = "[1m";
+pub const RESET: &str = "[0m";
+pub const NONE: &str = "";
 
 const BLACK: &str = "[38;5;0m";
 const RED: &str = "[38;5;1m";
@@ -159,134 +186,43 @@ impl ReportColor {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ReportColors {
-    pub message: ReportColor,
-    pub note: ReportColor,
-    pub divider: ReportColor,
-    pub trim: ReportColor,
-    pub highlight: ReportColor,
-    pub underline: ReportColor,
+    kind: ReportColor,
+    message: ReportColor,
+    divider: ReportColor,
+    trim: ReportColor,
+    underline: ReportColor,
     esc: &'static str,
+    bold: &'static str,
     reset: &'static str,
 }
 
 impl Default for ReportColors {
     fn default() -> Self {
-        Self {
-            message: ReportColor::BrightRed,
-            note: ReportColor::BrightGreen,
-            divider: ReportColor::BrightCyan,
-            trim: ReportColor::BrightBlue,
-            highlight: ReportColor::BrightRed,
-            underline: ReportColor::BrightMagenta,
-            esc: ESC,
-            reset: RESET,
-        }
+        Self::new()
     }
 }
 
-impl ReportColors {
-    #[must_use]
-    pub fn error() -> Self {
-        Self::default()
-    }
-
-    #[must_use]
-    pub fn warning() -> Self {
-        Self {
-            message: ReportColor::BrightYellow,
-            highlight: ReportColor::BrightYellow,
-            ..Default::default()
-        }
-    }
-
-    #[must_use]
-    pub const fn colorless() -> Self {
-        Self {
-            message: ReportColor::None,
-            note: ReportColor::None,
-            divider: ReportColor::None,
-            trim: ReportColor::None,
-            highlight: ReportColor::None,
-            underline: ReportColor::None,
-            esc: "",
-            reset: "",
-        }
-    }
+pub struct ReportData<Source, Kind, Name, Trimmed> {
+    source: Source,
+    kind: Kind,
+    name: Name,
+    trimmed: Trimmed,
+    color_data: ReportColors,
 }
 
-pub struct ReportData<S, K, N, T>
-where
-    S: Display,
-    K: Display,
-    N: Display,
-    T: Display,
-{
-    pub source: S,
-    pub kind: K,
-    pub name: N,
-    pub trimmed: T,
-    pub color_data: ReportColors,
-    error_messages: Vec<String>,
-}
-
-impl<S, K, N, T> ReportData<S, K, N, T>
-where
-    S: Display,
-    K: Display,
-    N: Display,
-    T: Display,
-{
-    pub const fn new(source: S, kind: K, name: N, trimmed: T, color_data: ReportColors) -> Self {
-        Self {
-            source,
-            kind,
-            name,
-            trimmed,
-            color_data,
-            error_messages: vec![],
-        }
-    }
-
-    pub const fn has_errors(&self) -> bool {
-        !self.error_messages.is_empty()
-    }
-
-    pub const fn errors(&self) -> &[String] {
-        self.error_messages.as_slice()
-    }
-
-    pub fn take_errors(&mut self) -> Vec<String> {
-        let mut errors = vec![];
-        errors.append(&mut self.error_messages);
-        errors
-    }
-}
-
-const MAX_LINE_SCAN_LENGTH: usize = 40;
-
-pub trait Reportable<Message, Notes>
-where
-    Message: Display,
-    Notes: Display,
-{
-    fn span(&self) -> Span;
-
-    fn message(&self) -> Option<Message>;
-
-    fn notes(&self) -> Vec<Notes>;
-
+impl<Source, Kind, Name, Trimmed> ReportData<Source, Kind, Name, Trimmed> {
     fn printed_source_map<S>(source: S) -> String
     where
-        S: Display,
+        S: AsRef<str>,
     {
-        source.to_string().replace('\n', "").replace('\t', "    ")
+        source.as_ref().replace('\n', "").replace('\t', "    ")
     }
 
     fn printed_source_length<S>(source: S) -> usize
     where
-        S: Display,
+        S: AsRef<str>,
     {
-        source.to_string().chars().fold(0, |accum, ch| {
+        source.as_ref().chars().fold(0, |accum, ch| {
             accum
                 + match ch {
                     '\t' => 4,
@@ -295,33 +231,43 @@ where
                 }
         })
     }
+}
 
+const MAX_LINE_SCAN_LENGTH: usize = 40;
+
+pub trait Reportable: Error {
+    fn notes(&self) -> Vec<String> {
+        vec![]
+    }
+}
+
+impl<Source, Kind, Name, Trimmed> ReportData<Source, Kind, Name, Trimmed>
+where
+    Source: AsRef<str>,
+    Kind: fmt::Display,
+    Name: fmt::Display,
+    Trimmed: fmt::Display,
+{
     // TODO: split this into smaller functions
     #[allow(clippy::too_many_lines)]
-    fn report<S, K, N, T>(&self, report_data: &mut ReportData<S, K, N, T>)
+    #[allow(clippy::missing_errors_doc)]
+    pub fn report<E, W>(&self, report: &Spanned<E>, to: &mut W) -> io::Result<()>
     where
-        S: Display,
-        K: Display,
-        N: Display,
-        T: Display,
+        E: Reportable,
+        W: Write,
     {
-        let source = report_data.source.to_string();
-        let kind = Self::printed_source_map(report_data.kind.to_string());
-        let name = Self::printed_source_map(report_data.name.to_string());
-        let trimmed = Self::printed_source_map(report_data.trimmed.to_string());
+        let source = self.source.as_ref();
+        let kind = Self::printed_source_map(self.kind.to_string());
+        let name = Self::printed_source_map(self.name.to_string());
+        let trimmed = Self::printed_source_map(self.trimmed.to_string());
 
         let kind = kind.as_str();
         let trimmed = trimmed.as_str();
 
-        let span_start = self.span().start_as_usize();
-        let span_end = self.span().end_as_usize();
+        let span_start = report.span().start();
+        let span_end = report.span().end();
 
-        let line_number = source
-            .char_indices()
-            .take_while(|(i, _ch)| *i < span_start)
-            .filter(|(_i, ch)| *ch == '\n')
-            .count()
-            + 1;
+        let line_number = report.span().line(source).unwrap_or(1);
 
         let line_start = source[..span_start]
             .char_indices()
@@ -330,11 +276,7 @@ where
             .last()
             .map_or(span_start, |(i, _ch)| i);
 
-        let column = source[line_start..]
-            .char_indices()
-            .take_while(|(i, _ch)| line_start + *i <= span_start)
-            .last()
-            .map_or(1, |(i, _ch)| i + 1);
+        let column = report.span().column(source).unwrap_or(1);
 
         let line_prefix_is_long = line_start <= span_start
             && source[line_start..span_start].chars().count()
@@ -390,14 +332,11 @@ where
 
         let last_line_number = line_number
             .checked_sub(if last_line_start < line_start {
-                source[last_line_start..line_start]
-                    .chars()
-                    .filter(|ch| *ch == '\n')
-                    .count()
+                source[last_line_start..line_start].lines().count()
             } else {
                 0
             })
-            .map_or(line_number, |last_line_number| last_line_number);
+            .unwrap_or(line_number);
 
         let last_line_not_this_line = last_line_end <= line_start
             && source[last_line_end..line_start]
@@ -430,16 +369,10 @@ where
                 i + ch.len_utf8() + next_line_start
             });
 
-        let next_line_number = line_number
-            + source[line_start..next_line_start]
-                .chars()
-                .filter(|ch| *ch == '\n')
-                .count();
+        let next_line_number = line_number + source[line_start..next_line_start].lines().count();
 
-        let line_number_digits = ((next_line_number + 1)
-            .checked_ilog10()
-            .map_or(0, |line_number_digits| line_number_digits)
-            + 1) as usize;
+        let line_number_digits =
+            ((next_line_number + 1).checked_ilog10().unwrap_or(0) + 1) as usize;
 
         let next_line_not_this_line = line_end <= next_line_start
             && source[line_end..next_line_start]
@@ -451,28 +384,44 @@ where
                 > MAX_LINE_SCAN_LENGTH + trimmed.chars().count();
 
         let mut buffer = format!(
-            "{0}{1}---------------{2}{3}\n{4}{5}{6}:{line_number}:{column}\n{7}{8}{9}:",
-            report_data.color_data.esc,
-            report_data.color_data.divider.to_ansi_escape(),
-            report_data.color_data.esc,
-            report_data.color_data.reset,
-            report_data.color_data.esc,
-            report_data.color_data.message.to_ansi_escape(),
-            name,
-            report_data.color_data.esc,
-            report_data.color_data.message.to_ansi_escape(),
+            "{}{}{}{}{}{}{}: {}{}{}",
+            self.color_data.esc,
+            self.color_data.kind.to_ansi_escape(),
+            self.color_data.esc,
+            self.color_data.bold,
             kind,
+            self.color_data.esc,
+            self.color_data.message.to_ansi_escape(),
+            report.kind(),
+            self.color_data.esc,
+            self.color_data.reset,
         );
 
-        if let Some(expected) = self.message() {
-            buffer.push(' ');
-            buffer.push_str(Self::printed_source_map(expected).as_str());
+        {
+            let mut source = report.kind().source();
+
+            while let Some(cause) = source {
+                buffer.push_str(format!("\n    Caused by: {cause}").as_str());
+                source = cause.source();
+            }
         }
 
-        buffer.push_str(report_data.color_data.esc);
-        buffer.push_str(report_data.color_data.reset);
-
-        buffer.push('\n');
+        buffer.push_str(
+            format!(
+                "\n {}{}{}{}{}-->{}{} {}:{}:{}",
+                " ".repeat(line_number_digits),
+                self.color_data.esc,
+                self.color_data.divider.to_ansi_escape(),
+                self.color_data.esc,
+                self.color_data.bold,
+                self.color_data.esc,
+                self.color_data.reset,
+                name,
+                line_number,
+                column,
+            )
+            .as_str(),
+        );
 
         let false_start = source[..span_start]
             .char_indices()
@@ -509,13 +458,15 @@ where
 
             buffer.push_str(
                 format!(
-                    " {0}{1}{3:>2$} | {4}{5}",
-                    report_data.color_data.esc,
-                    report_data.color_data.divider.to_ansi_escape(),
+                    "\n {0}{1}{2}{3}{5:>4$} | {6}{7}",
+                    self.color_data.esc,
+                    self.color_data.divider.to_ansi_escape(),
+                    self.color_data.esc,
+                    self.color_data.bold,
                     line_number_digits,
                     last_line_number,
-                    report_data.color_data.esc,
-                    report_data.color_data.reset,
+                    self.color_data.esc,
+                    self.color_data.reset,
                 )
                 .as_str(),
             );
@@ -526,28 +477,28 @@ where
                 buffer.push_str(
                     format!(
                         " {0}{1}{2}{3}{4}",
-                        report_data.color_data.esc,
-                        report_data.color_data.trim.to_ansi_escape(),
+                        self.color_data.esc,
+                        self.color_data.trim.to_ansi_escape(),
                         trimmed,
-                        report_data.color_data.esc,
-                        report_data.color_data.reset,
+                        self.color_data.esc,
+                        self.color_data.reset,
                     )
                     .as_str(),
                 );
             }
-
-            buffer.push('\n');
         }
 
         buffer.push_str(
             format!(
-                " {0}{1}{3:>2$} | {4}{5}",
-                report_data.color_data.esc,
-                report_data.color_data.divider.to_ansi_escape(),
+                "\n {0}{1}{2}{3}{5:>4$} | {6}{7}",
+                self.color_data.esc,
+                self.color_data.divider.to_ansi_escape(),
+                self.color_data.esc,
+                self.color_data.bold,
                 line_number_digits,
                 line_number,
-                report_data.color_data.esc,
-                report_data.color_data.reset,
+                self.color_data.esc,
+                self.color_data.reset,
             )
             .as_str(),
         );
@@ -556,11 +507,11 @@ where
             buffer.push_str(
                 format!(
                     "{0}{1}{2}{3}{4} ",
-                    report_data.color_data.esc,
-                    report_data.color_data.trim.to_ansi_escape(),
+                    self.color_data.esc,
+                    self.color_data.trim.to_ansi_escape(),
                     trimmed,
-                    report_data.color_data.esc,
-                    report_data.color_data.reset,
+                    self.color_data.esc,
+                    self.color_data.reset,
                 )
                 .as_str(),
             );
@@ -574,26 +525,20 @@ where
                 .any(|ch| ch == '\n')
         {
             buffer.push_str(
-                format!(
-                    "{0}{1}{2}{3}{4}",
-                    report_data.color_data.esc,
-                    report_data.color_data.highlight.to_ansi_escape(),
-                    Self::printed_source_map(&source[span_start..first_highlight_end]),
-                    report_data.color_data.esc,
-                    report_data.color_data.reset,
-                )
-                .as_str(),
+                Self::printed_source_map(&source[span_start..first_highlight_end]).as_str(),
             );
 
             buffer.push_str(
                 format!(
-                    "\n {0}{1}{3:>2$} | {4}{5}",
-                    report_data.color_data.esc,
-                    report_data.color_data.divider.to_ansi_escape(),
+                    "\n {0}{1}{2}{3}{5:>4$} | {6}{7}",
+                    self.color_data.esc,
+                    self.color_data.divider.to_ansi_escape(),
+                    self.color_data.esc,
+                    self.color_data.bold,
                     line_number_digits,
                     " ",
-                    report_data.color_data.esc,
-                    report_data.color_data.reset,
+                    self.color_data.esc,
+                    self.color_data.reset,
                 )
                 .as_str(),
             );
@@ -614,28 +559,32 @@ where
 
             buffer.push_str(
                 format!(
-                    "{0}{1}{2}{3}{4}",
-                    report_data.color_data.esc,
-                    report_data.color_data.underline.to_ansi_escape(),
+                    "{}{}{}{}{}{}{}",
+                    self.color_data.esc,
+                    self.color_data.underline.to_ansi_escape(),
+                    self.color_data.esc,
+                    self.color_data.bold,
                     "^".repeat(
                         Self::printed_source_length(&source[span_start..first_highlight_end])
                             .max(1)
                     ),
-                    report_data.color_data.esc,
-                    report_data.color_data.reset,
+                    self.color_data.esc,
+                    self.color_data.reset,
                 )
                 .as_str(),
             );
 
             buffer.push_str(
                 format!(
-                    "\n {0}{1}{3:>2$} | {4}{5}",
-                    report_data.color_data.esc,
-                    report_data.color_data.divider.to_ansi_escape(),
+                    "\n {0}{1}{2}{3}{5:>4$} | {6}{7}",
+                    self.color_data.esc,
+                    self.color_data.divider.to_ansi_escape(),
+                    self.color_data.esc,
+                    self.color_data.bold,
                     line_number_digits,
                     " ",
-                    report_data.color_data.esc,
-                    report_data.color_data.reset,
+                    self.color_data.esc,
+                    self.color_data.reset,
                 )
                 .as_str(),
             );
@@ -643,42 +592,35 @@ where
             buffer.push_str(
                 format!(
                     "{0}{1}{2}{3}{4}",
-                    report_data.color_data.esc,
-                    report_data.color_data.trim.to_ansi_escape(),
+                    self.color_data.esc,
+                    self.color_data.trim.to_ansi_escape(),
                     trimmed,
-                    report_data.color_data.esc,
-                    report_data.color_data.reset,
+                    self.color_data.esc,
+                    self.color_data.reset,
                 )
                 .as_str(),
             );
 
             buffer.push_str(
                 format!(
-                    "\n {0}{1}{3:>2$} | {4}{5}",
-                    report_data.color_data.esc,
-                    report_data.color_data.divider.to_ansi_escape(),
+                    "\n {0}{1}{2}{3}{5:>4$} | {6}{7}",
+                    self.color_data.esc,
+                    self.color_data.divider.to_ansi_escape(),
+                    self.color_data.esc,
+                    self.color_data.bold,
                     line_number_digits,
                     line_number
                         + source[first_highlight_end..second_highlight_start]
-                            .chars()
-                            .filter(|ch| *ch == '\n')
+                            .lines()
                             .count(),
-                    report_data.color_data.esc,
-                    report_data.color_data.reset,
+                    self.color_data.esc,
+                    self.color_data.reset,
                 )
                 .as_str(),
             );
 
             buffer.push_str(
-                format!(
-                    "{0}{1}{2}{3}{4}",
-                    report_data.color_data.esc,
-                    report_data.color_data.highlight.to_ansi_escape(),
-                    Self::printed_source_map(&source[second_highlight_start..span_end]).as_str(),
-                    report_data.color_data.esc,
-                    report_data.color_data.reset,
-                )
-                .as_str(),
+                Self::printed_source_map(&source[second_highlight_start..span_end]).as_str(),
             );
 
             buffer.push_str(Self::printed_source_map(&source[span_end..false_end]).as_str());
@@ -687,11 +629,11 @@ where
                 buffer.push_str(
                     format!(
                         " {0}{1}{2}{3}{4}",
-                        report_data.color_data.esc,
-                        report_data.color_data.trim.to_ansi_escape(),
+                        self.color_data.esc,
+                        self.color_data.trim.to_ansi_escape(),
                         trimmed,
-                        report_data.color_data.esc,
-                        report_data.color_data.reset,
+                        self.color_data.esc,
+                        self.color_data.reset,
                     )
                     .as_str(),
                 );
@@ -699,79 +641,69 @@ where
 
             buffer.push_str(
                 format!(
-                    "\n {0}{1}{3:>2$} | {4}{5}",
-                    report_data.color_data.esc,
-                    report_data.color_data.divider.to_ansi_escape(),
+                    "\n {0}{1}{2}{3}{5:>4$} | {6}{7}",
+                    self.color_data.esc,
+                    self.color_data.divider.to_ansi_escape(),
+                    self.color_data.esc,
+                    self.color_data.bold,
                     line_number_digits,
                     " ",
-                    report_data.color_data.esc,
-                    report_data.color_data.reset,
+                    self.color_data.esc,
+                    self.color_data.reset,
                 )
                 .as_str(),
             );
 
             buffer.push_str(
                 format!(
-                    "{0}{1}{2}{3}{4}",
-                    report_data.color_data.esc,
-                    report_data.color_data.underline.to_ansi_escape(),
+                    "{}{}{}{}{}{}{}",
+                    self.color_data.esc,
+                    self.color_data.underline.to_ansi_escape(),
+                    self.color_data.esc,
+                    self.color_data.bold,
                     "^".repeat(
                         Self::printed_source_length(&source[second_highlight_start..span_end])
-                            .max(1)
+                            .max(1),
                     ),
-                    report_data.color_data.esc,
-                    report_data.color_data.reset,
+                    self.color_data.esc,
+                    self.color_data.reset,
                 )
                 .as_str(),
             );
         } else if highlight_is_long {
             buffer.push_str(
-                format!(
-                    "{0}{1}{2}{3}{4}",
-                    report_data.color_data.esc,
-                    report_data.color_data.highlight.to_ansi_escape(),
-                    Self::printed_source_map(&source[span_start..first_highlight_end]),
-                    report_data.color_data.esc,
-                    report_data.color_data.reset,
-                )
-                .as_str(),
+                Self::printed_source_map(&source[span_start..first_highlight_end]).as_str(),
             );
 
             buffer.push_str(
                 format!(
                     " {0}{1}{2}{3}{4} ",
-                    report_data.color_data.esc,
-                    report_data.color_data.trim.to_ansi_escape(),
+                    self.color_data.esc,
+                    self.color_data.trim.to_ansi_escape(),
                     trimmed,
-                    report_data.color_data.esc,
-                    report_data.color_data.reset,
+                    self.color_data.esc,
+                    self.color_data.reset,
                 )
                 .as_str(),
             );
 
             buffer.push_str(
-                format!(
-                    "{0}{1}{2}{3}{4}",
-                    report_data.color_data.esc,
-                    report_data.color_data.highlight.to_ansi_escape(),
-                    Self::printed_source_map(&source[second_highlight_start..span_end]),
-                    report_data.color_data.esc,
-                    report_data.color_data.reset,
-                )
-                .as_str(),
+                Self::printed_source_map(&source[second_highlight_start..span_end]).as_str(),
             );
 
             buffer.push_str(Self::printed_source_map(&source[span_end..false_end]).as_str());
 
             buffer.push_str(
                 format!(
-                    "\n {0}{1}{3:>2$} | {4}{5}",
-                    report_data.color_data.esc,
-                    report_data.color_data.divider.to_ansi_escape(),
+                    "\n {0}{1}{2}{3}{5:>4$} | {6}{7}",
+                    self.color_data.esc,
+                    self.color_data.divider.to_ansi_escape(),
+                    self.color_data.esc,
+                    self.color_data.bold,
                     line_number_digits,
                     " ",
-                    report_data.color_data.esc,
-                    report_data.color_data.reset,
+                    self.color_data.esc,
+                    self.color_data.reset,
                 )
                 .as_str(),
             );
@@ -780,12 +712,12 @@ where
                 buffer.push_str(
                     format!(
                         "{0}{1}{2}{3}{4} ",
-                        report_data.color_data.esc,
-                        report_data.color_data.trim.to_ansi_escape(),
+                        self.color_data.esc,
+                        self.color_data.trim.to_ansi_escape(),
                         " ".repeat(Self::printed_source_length(trimmed) + 1)
                             .as_str(),
-                        report_data.color_data.esc,
-                        report_data.color_data.reset,
+                        self.color_data.esc,
+                        self.color_data.reset,
                     )
                     .as_str(),
                 );
@@ -800,15 +732,17 @@ where
 
             buffer.push_str(
                 format!(
-                    "{0}{1}{2}{3}{4}",
-                    report_data.color_data.esc,
-                    report_data.color_data.underline.to_ansi_escape(),
+                    "{}{}{}{}{}{}{}",
+                    self.color_data.esc,
+                    self.color_data.underline.to_ansi_escape(),
+                    self.color_data.esc,
+                    self.color_data.bold,
                     "^".repeat(
                         Self::printed_source_length(&source[span_start..first_highlight_end])
-                            .max(1)
+                            .max(1),
                     ),
-                    report_data.color_data.esc,
-                    report_data.color_data.reset,
+                    self.color_data.esc,
+                    self.color_data.reset,
                 )
                 .as_str(),
             );
@@ -816,42 +750,34 @@ where
             buffer.push_str(
                 format!(
                     " {0}{1}{2}{3}{4} ",
-                    report_data.color_data.esc,
-                    report_data.color_data.trim.to_ansi_escape(),
+                    self.color_data.esc,
+                    self.color_data.trim.to_ansi_escape(),
                     " ".repeat(Self::printed_source_length(trimmed) + 2)
                         .as_str(),
-                    report_data.color_data.esc,
-                    report_data.color_data.reset,
+                    self.color_data.esc,
+                    self.color_data.reset,
                 )
                 .as_str(),
             );
 
             buffer.push_str(
                 format!(
-                    "{0}{1}{2}{3}{4}",
-                    report_data.color_data.esc,
-                    report_data.color_data.underline.to_ansi_escape(),
+                    "{}{}{}{}{}{}{}",
+                    self.color_data.esc,
+                    self.color_data.underline.to_ansi_escape(),
+                    self.color_data.esc,
+                    self.color_data.bold,
                     "^".repeat(
                         Self::printed_source_length(&source[second_highlight_start..span_end])
-                            .max(1)
+                            .max(1),
                     ),
-                    report_data.color_data.esc,
-                    report_data.color_data.reset,
+                    self.color_data.esc,
+                    self.color_data.reset,
                 )
                 .as_str(),
             );
         } else {
-            buffer.push_str(
-                format!(
-                    "{0}{1}{2}{3}{4}",
-                    report_data.color_data.esc,
-                    report_data.color_data.highlight.to_ansi_escape(),
-                    Self::printed_source_map(&source[span_start..span_end]),
-                    report_data.color_data.esc,
-                    report_data.color_data.reset,
-                )
-                .as_str(),
-            );
+            buffer.push_str(Self::printed_source_map(&source[span_start..span_end]).as_str());
 
             buffer.push_str(Self::printed_source_map(&source[span_end..false_end]).as_str());
 
@@ -859,11 +785,11 @@ where
                 buffer.push_str(
                     format!(
                         " {0}{1}{2}{3}{4}",
-                        report_data.color_data.esc,
-                        report_data.color_data.trim.to_ansi_escape(),
+                        self.color_data.esc,
+                        self.color_data.trim.to_ansi_escape(),
                         trimmed,
-                        report_data.color_data.esc,
-                        report_data.color_data.reset,
+                        self.color_data.esc,
+                        self.color_data.reset,
                     )
                     .as_str(),
                 );
@@ -871,13 +797,15 @@ where
 
             buffer.push_str(
                 format!(
-                    "\n {0}{1}{3:>2$} | {4}{5}",
-                    report_data.color_data.esc,
-                    report_data.color_data.divider.to_ansi_escape(),
+                    "\n {0}{1}{2}{3}{5:>4$} | {6}{7}",
+                    self.color_data.esc,
+                    self.color_data.divider.to_ansi_escape(),
+                    self.color_data.esc,
+                    self.color_data.bold,
                     line_number_digits,
                     " ",
-                    report_data.color_data.esc,
-                    report_data.color_data.reset,
+                    self.color_data.esc,
+                    self.color_data.reset,
                 )
                 .as_str(),
             );
@@ -898,18 +826,18 @@ where
 
             buffer.push_str(
                 format!(
-                    "{0}{1}{2}{3}{4}",
-                    report_data.color_data.esc,
-                    report_data.color_data.underline.to_ansi_escape(),
+                    "{}{}{}{}{}{}{}",
+                    self.color_data.esc,
+                    self.color_data.underline.to_ansi_escape(),
+                    self.color_data.esc,
+                    self.color_data.bold,
                     "^".repeat(Self::printed_source_length(&source[span_start..span_end]).max(1)),
-                    report_data.color_data.esc,
-                    report_data.color_data.reset,
+                    self.color_data.esc,
+                    self.color_data.reset,
                 )
                 .as_str(),
             );
         }
-
-        buffer.push('\n');
 
         if next_line_not_this_line {
             let false_end = source[next_line_start..]
@@ -925,13 +853,15 @@ where
 
             buffer.push_str(
                 format!(
-                    " {0}{1}{3:>2$} | {4}{5}",
-                    report_data.color_data.esc,
-                    report_data.color_data.divider.to_ansi_escape(),
+                    "\n {0}{1}{2}{3}{5:>4$} | {6}{7}",
+                    self.color_data.esc,
+                    self.color_data.divider.to_ansi_escape(),
+                    self.color_data.esc,
+                    self.color_data.bold,
                     line_number_digits,
                     next_line_number,
-                    report_data.color_data.esc,
-                    report_data.color_data.reset,
+                    self.color_data.esc,
+                    self.color_data.reset,
                 )
                 .as_str(),
             );
@@ -942,31 +872,223 @@ where
                 buffer.push_str(
                     format!(
                         " {0}{1}{2}{3}{4}",
-                        report_data.color_data.esc,
-                        report_data.color_data.trim.to_ansi_escape(),
+                        self.color_data.esc,
+                        self.color_data.trim.to_ansi_escape(),
                         trimmed,
-                        report_data.color_data.esc,
-                        report_data.color_data.reset,
+                        self.color_data.esc,
+                        self.color_data.reset,
                     )
                     .as_str(),
                 );
             }
-
-            buffer.push('\n');
         }
 
-        for note in &self.notes() {
-            buffer.push_str(report_data.color_data.esc);
-            buffer.push_str(report_data.color_data.note.to_ansi_escape());
+        for note in report.kind().notes().as_slice() {
+            buffer.push_str(
+                format!(
+                    "\n {}{}{}{}{} = {}{}note: {}{}{}",
+                    " ".repeat(line_number_digits),
+                    self.color_data.esc,
+                    self.color_data.divider.to_ansi_escape(),
+                    self.color_data.esc,
+                    self.color_data.bold,
+                    self.color_data.esc,
+                    self.color_data.message.to_ansi_escape(),
+                    note,
+                    self.color_data.esc,
+                    self.color_data.reset
+                )
+                .as_str(),
+            );
 
-            buffer.push_str("NOTE: ");
-            buffer.push_str(note.to_string().as_str());
-
-            buffer.push_str(report_data.color_data.esc);
-            buffer.push_str(report_data.color_data.reset);
-            buffer.push('\n');
+            buffer.push_str(self.color_data.esc);
+            buffer.push_str(self.color_data.reset);
         }
 
-        report_data.error_messages.push(buffer);
+        writeln!(to, "{buffer}")
+    }
+}
+
+impl ReportColors {
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            kind: ReportColor::BrightRed,
+            message: ReportColor::BrightWhite,
+            divider: ReportColor::BrightBlue,
+            trim: ReportColor::BrightGreen,
+            underline: ReportColor::BrightMagenta,
+            esc: ESC,
+            bold: BOLD,
+            reset: RESET,
+        }
+    }
+
+    #[must_use]
+    pub const fn colorless() -> Self {
+        Self {
+            kind: ReportColor::None,
+            message: ReportColor::None,
+            divider: ReportColor::None,
+            trim: ReportColor::None,
+            underline: ReportColor::None,
+            esc: NONE,
+            bold: NONE,
+            reset: NONE,
+        }
+    }
+
+    #[must_use]
+    pub const fn error() -> Self {
+        Self::new()
+    }
+
+    #[must_use]
+    pub const fn warning() -> Self {
+        Self::new().with_message_color(ReportColor::BrightYellow)
+    }
+
+    #[must_use]
+    pub const fn with_kind_color(self, color: ReportColor) -> Self {
+        Self {
+            kind: color,
+            message: self.message,
+            divider: self.divider,
+            trim: self.trim,
+            underline: self.underline,
+            esc: self.esc,
+            bold: self.bold,
+            reset: self.reset,
+        }
+    }
+
+    #[must_use]
+    pub const fn with_message_color(self, color: ReportColor) -> Self {
+        Self {
+            kind: self.kind,
+            message: color,
+            divider: self.divider,
+            trim: self.trim,
+            underline: self.underline,
+            esc: self.esc,
+            bold: self.bold,
+            reset: self.reset,
+        }
+    }
+
+    #[must_use]
+    pub const fn with_divider_color(self, color: ReportColor) -> Self {
+        Self {
+            kind: self.kind,
+            message: self.message,
+            divider: color,
+            trim: self.trim,
+            underline: self.underline,
+            esc: self.esc,
+            bold: self.bold,
+            reset: self.reset,
+        }
+    }
+
+    #[must_use]
+    pub const fn with_trim_color(self, color: ReportColor) -> Self {
+        Self {
+            kind: self.kind,
+            message: self.message,
+            divider: self.divider,
+            trim: color,
+            underline: self.underline,
+            esc: self.esc,
+            bold: self.bold,
+            reset: self.reset,
+        }
+    }
+
+    #[must_use]
+    pub const fn with_underline_color(self, color: ReportColor) -> Self {
+        Self {
+            kind: self.kind,
+            message: self.message,
+            divider: self.divider,
+            trim: self.trim,
+            underline: color,
+            esc: self.esc,
+            bold: self.bold,
+            reset: self.reset,
+        }
+    }
+}
+
+impl<Source, Kind, Name, Trimmed> ReportData<Source, Kind, Name, Trimmed> {
+    #[must_use]
+    pub const fn new(
+        source: Source,
+        kind: Kind,
+        name: Name,
+        trimmed: Trimmed,
+        color_data: ReportColors,
+    ) -> Self {
+        Self {
+            source,
+            kind,
+            name,
+            trimmed,
+            color_data,
+        }
+    }
+
+    #[must_use]
+    pub fn with_source<U>(self, source: U) -> ReportData<U, Kind, Name, Trimmed> {
+        ReportData {
+            source,
+            kind: self.kind,
+            name: self.name,
+            trimmed: self.trimmed,
+            color_data: self.color_data,
+        }
+    }
+
+    #[must_use]
+    pub fn with_kind<U>(self, kind: U) -> ReportData<Source, U, Name, Trimmed> {
+        ReportData {
+            source: self.source,
+            kind,
+            name: self.name,
+            trimmed: self.trimmed,
+            color_data: self.color_data,
+        }
+    }
+
+    #[must_use]
+    pub fn with_name<U>(self, name: U) -> ReportData<Source, Kind, U, Trimmed> {
+        ReportData {
+            source: self.source,
+            kind: self.kind,
+            name,
+            trimmed: self.trimmed,
+            color_data: self.color_data,
+        }
+    }
+
+    #[must_use]
+    pub fn with_trimmed<U>(self, trimmed: U) -> ReportData<Source, Kind, Name, U> {
+        ReportData {
+            source: self.source,
+            kind: self.kind,
+            name: self.name,
+            trimmed,
+            color_data: self.color_data,
+        }
+    }
+
+    #[must_use]
+    pub fn with_color_data(self, color_data: ReportColors) -> Self {
+        Self {
+            source: self.source,
+            kind: self.kind,
+            name: self.name,
+            trimmed: self.trimmed,
+            color_data,
+        }
     }
 }

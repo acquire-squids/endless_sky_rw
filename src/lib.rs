@@ -7,14 +7,14 @@ mod reporting;
 
 pub mod prelude {
     pub use crate::data::{Data, Node, NodeIndex, SourceIndex};
-    pub use crate::lex::token::{Token, TokenKind};
-    pub use crate::reporting::Span;
+    pub use crate::lex::Token;
+    pub use crate::reporting::{Span, Spanned};
 }
 
 pub use self::prelude::*;
 
 use crate::parse::Parser;
-use crate::reporting::{ReportColors, ReportData, Reportable};
+use crate::reporting::{ReportColors, ReportData};
 
 use std::{
     collections::HashMap,
@@ -205,49 +205,32 @@ impl Reader {
     }
 
     fn read<T: Write>(mut self, output: &mut T, colored_errors: bool) -> io::Result<DataFolder> {
-        let mut reports = vec![];
-
         for (i, &source_index) in self.sources.iter().enumerate() {
             let mut parser = Parser::new(
                 source_index,
                 self.data
                     .get_source(source_index)
-                    .expect("We know the current source exists because we're iterating over it")
-                    .to_string(),
+                    .expect("We know the current source exists because we're iterating over it"),
             );
 
-            parser.parse(&mut self.data);
-
-            let errors = parser.take_errors();
-
-            if !errors.is_empty() {
-                let mut report_data = ReportData::new(
+            if let Err(errors) = parser.parse(&mut self.data) {
+                let report_data = ReportData::new(
                     self.data
                         .get_source(source_index)
                         .expect("The source must exist")
                         .to_owned(),
-                    "ERROR",
+                    "error",
                     self.paths.get(i).expect("The path must exist").display(),
-                    "[snip]",
+                    "...",
                     if colored_errors {
-                        ReportColors::default()
+                        ReportColors::new()
                     } else {
                         ReportColors::colorless()
                     },
                 );
 
                 for error in errors {
-                    error.report(&mut report_data);
-                }
-
-                reports.push(report_data);
-            }
-        }
-
-        if !reports.is_empty() {
-            for report_data in &mut reports {
-                for error in report_data.take_errors() {
-                    write!(output, "{error}")?;
+                    report_data.report(&error, output)?;
                 }
             }
         }

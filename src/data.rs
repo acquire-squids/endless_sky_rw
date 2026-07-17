@@ -1,5 +1,8 @@
-use crate::arena::{self, Arena};
-use crate::lex::token::Token;
+use crate::{
+    arena::{self, Arena},
+    lex::Token,
+    reporting::Spanned,
+};
 
 use std::{
     collections::HashSet,
@@ -17,10 +20,10 @@ pub struct Data {
 
 pub enum Node {
     Some {
-        tokens: Vec<Token>,
+        tokens: Vec<Spanned<Token>>,
     },
     Parent {
-        tokens: Vec<Token>,
+        tokens: Vec<Spanned<Token>>,
         children: Vec<NodeIndex>,
     },
     Error,
@@ -121,7 +124,7 @@ impl Data {
         }
     }
 
-    pub fn push_token(&mut self, node_index: NodeIndex, token: Token) {
+    pub fn push_token(&mut self, node_index: NodeIndex, token: Spanned<Token>) {
         match self.get_mut_node(node_index) {
             None | Some(Node::Error) => {}
             Some(Node::Some { tokens } | Node::Parent { tokens, .. }) => tokens.push(token),
@@ -129,14 +132,14 @@ impl Data {
     }
 
     #[must_use]
-    pub fn get_tokens(&self, node_index: NodeIndex) -> Option<&[Token]> {
+    pub fn get_tokens(&self, node_index: NodeIndex) -> Option<&[Spanned<Token>]> {
         match self.get_node(node_index) {
             None | Some(Node::Error) => None,
             Some(Node::Some { tokens } | Node::Parent { tokens, .. }) => Some(tokens.as_slice()),
         }
     }
 
-    pub fn get_mut_tokens(&mut self, node_index: NodeIndex) -> Option<&mut [Token]> {
+    pub fn get_mut_tokens(&mut self, node_index: NodeIndex) -> Option<&mut [Spanned<Token>]> {
         match self.get_mut_node(node_index) {
             None | Some(Node::Error) => None,
             Some(Node::Some { tokens } | Node::Parent { tokens, .. }) => Some(tokens),
@@ -169,22 +172,23 @@ impl Data {
     }
 
     #[must_use]
-    pub fn get_lexeme(&self, source_index: SourceIndex, token: Token) -> Option<&str> {
-        self.get_source(source_index).and_then(|s| token.lexeme(s))
+    pub fn get_lexeme(&self, source_index: SourceIndex, token: &Spanned<Token>) -> Option<&str> {
+        self.get_source(source_index)
+            .and_then(|s| token.span().lexeme(s))
     }
 
     #[must_use]
     pub fn try_get_number(
         &self,
         source_index: SourceIndex,
-        token: Token,
+        token: &Spanned<Token>,
     ) -> Option<Result<f64, ParseFloatError>> {
         self.get_lexeme(source_index, token).map(str::parse::<f64>)
     }
 
     pub fn filter<P>(&self, mut predicate: P) -> impl Iterator<Item = (SourceIndex, NodeIndex)>
     where
-        P: FnMut(SourceIndex, &[Token]) -> bool,
+        P: FnMut(SourceIndex, &[Spanned<Token>]) -> bool,
     {
         self.root_nodes()
             .iter()
@@ -201,7 +205,7 @@ impl Data {
         mut predicate: P,
     ) -> impl Iterator<Item = NodeIndex>
     where
-        P: FnMut(SourceIndex, &[Token]) -> bool,
+        P: FnMut(SourceIndex, &[Spanned<Token>]) -> bool,
     {
         self.get_children(node_index)
             .into_iter()
@@ -282,7 +286,7 @@ impl Data {
         if let Some(tokens) = self.get_tokens(node_index) {
             for (i, token) in tokens.iter().enumerate() {
                 if let Some(source) = self.get_source(source_index)
-                    && let Some(lexeme) = token.lexeme(source)
+                    && let Some(lexeme) = token.span().lexeme(source)
                     && !lexeme.is_empty()
                 {
                     if !lexeme.contains(' ') {

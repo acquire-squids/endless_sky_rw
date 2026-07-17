@@ -11,7 +11,7 @@ macro_rules! node_path_iter {
 
             data.filter_children(source_index, node_index, |source_index, tokens| {
                 matches!(
-                    tokens.first().map(|&token| data.get_lexeme(source_index, token)),
+                    tokens.first().map(|token| data.get_lexeme(source_index, &token)),
                     Some(Some($first))
                 )
             })
@@ -36,7 +36,7 @@ macro_rules! node_path_iter {
 
             data.filter(|source_index, tokens| {
                 matches!(
-                    tokens.first().map(|&token| data.get_lexeme(source_index, token)),
+                    tokens.first().map(|token| data.get_lexeme(source_index, token)),
                     Some(Some($first))
                 )
             })
@@ -97,14 +97,14 @@ macro_rules! tree_from_tokens {
                     .push_source(source_index, $token)
                     .expect("The data is verified to have the source by the above condition");
 
-                data.push_token(node, Token::new(TokenKind::Symbol, Span::new(span.0, span.1)));
+                data.push_token(node, endless_sky_rw::Spanned::new(Token::Symbol, Span::new(source_index.index(), span.0, span.1)));
 
                 $(
                     let span = data
                         .push_source(source_index, $tokens)
                         .expect("The data is verified to have the source by the above condition");
 
-                    data.push_token(node, Token::new(TokenKind::Symbol, Span::new(span.0, span.1)));
+                    data.push_token(node, endless_sky_rw::Spanned::new(Token::Symbol, Span::new(source_index.index(), span.0, span.1)));
                 )*
 
                 $(

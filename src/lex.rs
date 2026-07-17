@@ -1,20 +1,14 @@
-pub mod error;
-pub mod token;
+use crate::reporting::{Reportable, Span, Spanned};
 
-use self::{
-    error::{LexError, LexErrorKind},
-    token::{Token, TokenKind},
-};
-
-use crate::reporting::Span;
-
-pub type LexItem = Result<Token, LexError>;
+use std::{error, fmt};
 
 pub struct Lexer {
     source: String,
-    lookahead: Option<LexItem>,
-    on_new_line: bool,
+    source_id: usize,
     byte_offset: usize,
+    start_byte_offset: usize,
+    lookahead: Option<<Self as Iterator>::Item>,
+    on_new_line: bool,
     spaces: IndentKind,
 }
 
@@ -26,49 +20,119 @@ enum IndentKind {
     Mixed,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Token {
+    Symbol,
+    Indent,
+    Newline,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Error {
+    MixedIndentation,
+    UnclosedString,
+    NonAsciiCharacter,
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::MixedIndentation => write!(f, "mixed indentation detected"),
+            Self::UnclosedString => write!(f, "this string was never closed"),
+            Self::NonAsciiCharacter => {
+                write!(
+                    f,
+                    "only ascii characters are allowed in Endless Sky data files"
+                )
+            }
+        }
+    }
+}
+
+impl error::Error for Error {}
+
+impl Reportable for Error {
+    fn notes(&self) -> Vec<String> {
+        match self {
+            Self::MixedIndentation => {
+                vec!["you should only use one of tabs or spaces when indenting, not both".to_string()]
+            }
+            Self::UnclosedString => vec![
+                "the string terminated at the newline character, but you should close it anyway".to_string(),
+            ],
+            Self::NonAsciiCharacter => vec![
+                "if this has changed since endless_sky_rw was written, the library needs to be updated".to_string(),
+            ],
+        }
+    }
+}
+
 impl Lexer {
-    pub const fn new(source: String) -> Self {
+    #[must_use]
+    pub const fn new(source_id: usize) -> Self {
         Self {
-            source,
+            source: String::new(),
+            source_id,
+            byte_offset: 0,
+            start_byte_offset: 0,
             lookahead: None,
             on_new_line: true,
-            byte_offset: 0,
             spaces: IndentKind::Unknown,
         }
     }
 
-    pub const fn source(&self) -> &str {
-        self.source.as_str()
+    pub fn push_source(&mut self, source: &str) {
+        self.source.push_str(source);
+    }
+
+    #[must_use]
+    pub const fn source_id(&self) -> usize {
+        self.source_id
+    }
+
+    #[must_use]
+    pub fn peek(&mut self) -> Option<&<Self as Iterator>::Item> {
+        if self.lookahead.is_none() {
+            self.lookahead = self.next();
+        }
+
+        self.lookahead.as_ref()
     }
 
     const fn at(&self) -> usize {
         self.byte_offset
     }
 
+    const fn start(&self) -> usize {
+        self.start_byte_offset
+    }
+
     fn ahead(&self) -> Option<char> {
-        self.source()
+        self.source
             .get((self.at())..)
             .and_then(|text| text.chars().next())
     }
 
     fn advance(&mut self) {
-        if let Some(ch) = self.ahead() {
-            self.byte_offset += ch.len_utf8();
-        }
+        self.byte_offset = self.source.ceil_char_boundary(self.at() + 1);
+    }
+
+    const fn single_char_token(&self, kind: Token) -> Spanned<Token> {
+        Spanned::new(kind, Span::new(self.source_id(), self.start(), self.at()))
     }
 }
 
 impl Lexer {
-    fn indent(&mut self, start: usize, kind: IndentKind) -> LexItem {
-        let token = Token::new(TokenKind::Indent, Span::new(start, self.at()));
+    fn indent(&mut self, kind: IndentKind) -> <Self as Iterator>::Item {
+        let token = self.single_char_token(Token::Indent);
 
         if self.spaces != kind && !matches!(self.spaces, IndentKind::Unknown | IndentKind::Mixed) {
             self.spaces = IndentKind::Mixed;
             self.lookahead = Some(Ok(token));
 
-            return Err(LexError::new(
-                LexErrorKind::MixedIndentation,
-                Span::new(start, self.at()),
+            return Err(Spanned::new(
+                Error::MixedIndentation,
+                Span::new(self.source_id(), self.start(), self.at()),
             ));
         } else if matches!(self.spaces, IndentKind::Unknown) {
             self.spaces = kind;
@@ -79,32 +143,29 @@ impl Lexer {
 }
 
 impl Iterator for Lexer {
-    type Item = LexItem;
+    type Item = Result<Spanned<Token>, Spanned<Error>>;
 
-    fn next(&mut self) -> Option<LexItem> {
+    fn next(&mut self) -> Option<Self::Item> {
         if let Some(lookahead) = self.lookahead.take() {
             return Some(lookahead);
         }
 
-        while let Some(c) = self.ahead() {
-            let start = self.at();
+        while let Some(ch) = self.ahead() {
+            self.start_byte_offset = self.at();
 
             self.advance();
 
-            match c {
+            match ch {
                 '\n' => {
                     self.on_new_line = true;
 
-                    return Some(Ok(Token::new(
-                        TokenKind::Newline,
-                        Span::new(start, self.byte_offset),
-                    )));
+                    return Some(Ok(self.single_char_token(Token::Newline)));
                 }
                 ' ' if self.on_new_line => {
-                    return Some(self.indent(start, IndentKind::Space));
+                    return Some(self.indent(IndentKind::Space));
                 }
                 '\t' if self.on_new_line => {
-                    return Some(self.indent(start, IndentKind::Tab));
+                    return Some(self.indent(IndentKind::Tab));
                 }
                 ' ' | '\t' => {}
                 '#' => {
@@ -117,25 +178,28 @@ impl Iterator for Lexer {
                 '`' | '"' => {
                     self.on_new_line = false;
 
-                    let after_quote = self.at();
+                    self.start_byte_offset = self.at();
 
                     while let Some(n) = self.ahead()
                         && n != '\n'
-                        && n != c
+                        && n != ch
                     {
                         self.advance();
                     }
 
-                    let token = Token::new(TokenKind::Symbol, Span::new(after_quote, self.at()));
+                    let token = Spanned::new(
+                        Token::Symbol,
+                        Span::new(self.source_id(), self.start(), self.at()),
+                    );
 
                     if let Some(n) = self.ahead()
-                        && n != c
+                        && n != ch
                     {
                         self.lookahead = Some(Ok(token));
 
-                        return Some(Err(LexError::new(
-                            LexErrorKind::UnclosedString,
-                            Span::new(start, after_quote),
+                        return Some(Err(Spanned::new(
+                            Error::UnclosedString,
+                            Span::new(self.source_id(), self.start() - ch.len_utf8(), self.start()),
                         )));
                     }
 
@@ -143,7 +207,7 @@ impl Iterator for Lexer {
 
                     return Some(Ok(token));
                 }
-                _ if c.is_ascii() => {
+                _ if ch.is_ascii() => {
                     self.on_new_line = false;
 
                     while let Some(n) = self.ahead()
@@ -153,17 +217,17 @@ impl Iterator for Lexer {
                         self.advance();
                     }
 
-                    return Some(Ok(Token::new(
-                        TokenKind::Symbol,
-                        Span::new(start, self.at()),
+                    return Some(Ok(Spanned::new(
+                        Token::Symbol,
+                        Span::new(self.source_id(), self.start(), self.at()),
                     )));
                 }
                 _ => {
                     self.on_new_line = false;
 
-                    return Some(Err(LexError::new(
-                        LexErrorKind::NonAsciiCharacter,
-                        Span::new(start, self.at()),
+                    return Some(Err(Spanned::new(
+                        Error::NonAsciiCharacter,
+                        Span::new(self.source_id(), self.start(), self.at()),
                     )));
                 }
             }
