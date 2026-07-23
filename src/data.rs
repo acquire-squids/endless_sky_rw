@@ -1,8 +1,9 @@
 use crate::{
     arena::{self, Arena},
     lex::Token,
-    reporting::Spanned,
 };
+
+use reporting::Spanned;
 
 use std::{
     collections::HashSet,

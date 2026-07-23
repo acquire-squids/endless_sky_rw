@@ -1,8 +1,9 @@
 use crate::{
     data::{Data, Node, NodeIndex, SourceIndex},
     lex::{self, Lexer, Token},
-    reporting::{Reportable, Spanned},
 };
+
+use reporting::{Reportable, Spanned};
 
 use std::{error, fmt, mem};
 

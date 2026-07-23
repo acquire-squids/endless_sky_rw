@@ -3,18 +3,18 @@ mod data;
 mod lex;
 mod macros;
 mod parse;
-mod reporting;
 
 pub mod prelude {
     pub use crate::data::{Data, Node, NodeIndex, SourceIndex};
     pub use crate::lex::Token;
-    pub use crate::reporting::{Span, Spanned};
+    pub use reporting::{Span, Spanned};
 }
 
 pub use self::prelude::*;
 
 use crate::parse::Parser;
-use crate::reporting::{ReportColors, ReportData};
+
+use reporting::{ReportColors, ReportData};
 
 use std::{
     collections::HashMap,

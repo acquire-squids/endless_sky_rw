@@ -5,3 +5,10 @@ version = 4
 [[package]]
 name = "endless_sky_rw"
 version = "0.3.1"
+dependencies = [
+ "reporting",
+]
+
+[[package]]
+name = "reporting"
+version = "0.1.0"

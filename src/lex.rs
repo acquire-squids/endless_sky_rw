@@ -1,4 +1,4 @@
-use crate::reporting::{Reportable, Span, Spanned};
+use reporting::{Reportable, Span, Spanned};
 
 use std::{error, fmt};
 
