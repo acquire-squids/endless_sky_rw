@@ -401,7 +401,10 @@ where
             let mut source = report.kind().source();
 
             while let Some(cause) = source {
-                buffer.push_str(format!("\n    Caused by: {cause}").as_str());
+                buffer.push_str(
+                    format!("\n{}Caused by: {cause}", Self::printed_source_map("\t")).as_str(),
+                );
+
                 source = cause.source();
             }
         }
@@ -894,9 +897,9 @@ where
                     self.color_data.bold,
                     self.color_data.esc,
                     self.color_data.message.to_ansi_escape(),
-                    note,
                     self.color_data.esc,
-                    self.color_data.reset
+                    self.color_data.reset,
+                    note,
                 )
                 .as_str(),
             );
